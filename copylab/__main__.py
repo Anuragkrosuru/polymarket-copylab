@@ -73,6 +73,7 @@ class Ledger:
         with self.db:
             if not self.db.execute('INSERT OR IGNORE INTO seen VALUES (?)', (key,)).rowcount:
                 return 'duplicate'
+            self.db.execute('INSERT OR IGNORE INTO events VALUES (?,?)', (key, json.dumps(trade, sort_keys=True)))
             age = now - float(trade['timestamp'])
             if trade['side'] not in ('BUY', 'SELL') or not 0 <= age <= 120:
                 return 'old trade or unsupported side'
@@ -202,6 +203,9 @@ def main():
     sub.add_parser('leaderboard')
     simulation = sub.add_parser('simulate', help='Offline synthetic scenarios; not a profitability backtest')
     simulation.add_argument('--output', default='simulation-results.json')
+    report_parser = sub.add_parser('report', help='Export every paper trade and current profit')
+    report_parser.add_argument('--output-dir', default='reports')
+    report_parser.add_argument('--docx-python', help='Python executable with python-docx installed')
     history = sub.add_parser('history', help='Saved live-paper polling snapshots')
     history.add_argument('--limit', type=int, default=20)
     status = sub.add_parser('status')
@@ -212,6 +216,8 @@ def main():
     watch.add_argument('--wallet-file', help='JSON file containing a wallets list')
     watch.add_argument('--poll', type=int, default=30)
     watch.add_argument('--once', action='store_true')
+    watch.add_argument('--report-dir', help='Refresh trade report after every poll')
+    watch.add_argument('--docx-python', help='Python executable with python-docx for Word reports')
     watch.add_argument('--duration', type=int, help='Stop after this many seconds; omit to keep running')
     args = parser.parse_args()
     if args.command == 'leaderboard':
@@ -223,6 +229,11 @@ def main():
         run(args.output)
         return
     ledger = Ledger(args.db)
+    if args.command == 'report':
+        from copylab.report import export
+        export(ledger, args.output_dir, args.docx_python)
+        print('Paper trade report saved to', args.output_dir)
+        return
     if args.command == 'history':
         if not 1 <= args.limit <= 1000:
             parser.error('--limit must be between 1 and 1000')
@@ -265,6 +276,13 @@ def main():
             report = summary(ledger)
             runtime.save_snapshot(ledger, report)
             display(report)
+            if args.report_dir:
+                from copylab.report import export
+                import subprocess
+                try:
+                    export(ledger, args.report_dir, args.docx_python)
+                except (OSError, ValueError, subprocess.SubprocessError) as error:
+                    print('Report export failed; watcher continues:', str(error), flush=True)
             elapsed = time.monotonic() - started
             if args.once or (args.duration is not None and elapsed >= args.duration):
                 break

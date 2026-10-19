@@ -68,7 +68,7 @@ python3 -m unittest discover -s tests -v
 python3 -m copylab --help
 ```
 
-The 24 offline tests cover duplicate suppression, per-token/day/total caps, stale signals, minimum order sizes, adverse entry and exit prices, depth, fee reserves, full and partial source exits, open P/L, winning and losing settlement, restart-safe payouts and sales, missing/stale quotes, request retries, isolated event failures, watcher locking, synthetic integration scenarios, and existing database migration. Live verification passed on October 19, 2026 with network permission: leaderboard lookup, public wallet trade feed, public order-book schema, and two watcher scans using a temporary ledger. Startup history was skipped and no simulated buys occurred during those scans. This verifies connectivity, not strategy profitability or real execution.
+The 26 offline tests cover duplicate suppression, per-token/day/total caps, stale signals, minimum order sizes, adverse entry and exit prices, depth, fee reserves, full and partial source exits, open P/L, winning and losing settlement, restart-safe payouts and sales, missing/stale quotes, request retries, isolated event failures, watcher locking, synthetic integration scenarios, and existing database migration. Live verification passed on October 19, 2026 with network permission: leaderboard lookup, public wallet trade feed, public order-book schema, and two watcher scans using a temporary ledger. Startup history was skipped and no simulated buys occurred during those scans. This verifies connectivity, not strategy profitability or real execution.
 
 ## Public API references
 
@@ -99,3 +99,15 @@ python3 -u -m copylab watch --wallet-file watchlist.json --poll 30
 ```
 
 There is no system startup service or cloud hosting configured. A sleeping or powered-off computer does not collect trades. A profitable-looking snapshot or synthetic scenario is not a validated profitable strategy.
+
+## Updating Word trade report
+
+```sh
+python3 -m copylab report --output-dir reports
+```
+
+Exports every copied buy, sell, and settlement to `reports/trade-history.csv`, along with a current account report in Markdown and JSON. It reads the latest saved valuations; use `status` first if you need a manual price refresh. Add `--docx-python /path/to/python` to also generate `reports/trade-report.docx` using a Python environment with `python-docx` installed.
+
+For automatic updates, start the watcher with `--report-dir reports --docx-python /path/to/python`. The current Mac background trial uses the bundled document Python and updates the same report after each poll. Other computers can use any Python with `python-docx` for the optional Word exporter. Core monitoring and CSV exports do not require extra packages.
+
+The report separates cash changes, simulated fee reserves, realized sale and settlement gains, and estimated open gains. Source trade times are labeled when an older fill has no recorded copy time. Runtime reports remain local and are excluded from Git. Open the Word file again or reload it to see subsequent changes.

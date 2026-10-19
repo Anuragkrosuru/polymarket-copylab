@@ -41,6 +41,7 @@ def initialize(db):
         report TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS decisions(id TEXT PRIMARY KEY, checked REAL,
         result TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, source TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS exits(id TEXT, fill_id TEXT, shares REAL,
         cost REAL, proceeds REAL, checked REAL, PRIMARY KEY(id, fill_id));
     ''')
