@@ -139,6 +139,8 @@ def summary(ledger, now=None):
                               note=mark[2] if mark else 'not yet valued'))
     open_cost = sum(p['cost'] for p in positions)
     health = ledger.db.execute('SELECT checked FROM health WHERE id=1').fetchone()
+    monitor = ledger.db.execute('SELECT targets FROM monitor WHERE id=1').fetchone()
+    targets = json.loads(monitor[0]) if monitor else None
     return dict(mode='SIMULATION', cash=cash, initial_cash=40, open_cost=open_cost,
                 open_value=value if not missing else None, realized_pnl=payout-settled_cost+sale_proceeds-sale_cost,
                 sale_pnl=sale_proceeds-sale_cost, settlement_pnl=payout-settled_cost,
@@ -149,11 +151,12 @@ def summary(ledger, now=None):
                 fills=ledger.db.execute('SELECT COUNT(*) FROM fills').fetchone()[0],
                 settled_positions=ledger.db.execute('SELECT COUNT(*) FROM settlements').fetchone()[0],
                 unpriced_positions=missing, positions=positions,
-                last_refresh=health[0] if health else None,
+                last_refresh=health[0] if health else None, monitored_wallets=targets,
                 decision_counts={r[0]: r[1] for r in ledger.db.execute(
                     'SELECT result, COUNT(*) FROM decisions GROUP BY result')},
                 scans=[dict(wallet=r[0], checked=r[1], newest=r[2], records=r[3], error=r[4])
-                       for r in ledger.db.execute('SELECT * FROM scans ORDER BY wallet')])
+                       for r in ledger.db.execute('SELECT * FROM scans ORDER BY wallet')
+                       if targets is None or r[0] in targets])
 
 
 def display(report):

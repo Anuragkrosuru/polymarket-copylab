@@ -35,6 +35,7 @@ def watcher_lock(database):
 
 def initialize(db):
     db.executescript('''
+    CREATE TABLE IF NOT EXISTS monitor(id INTEGER PRIMARY KEY CHECK(id=1), checked REAL, targets TEXT);
     CREATE TABLE IF NOT EXISTS scans(wallet TEXT PRIMARY KEY, checked REAL,
         newest REAL, records INTEGER, error TEXT);
     CREATE TABLE IF NOT EXISTS snapshots(id INTEGER PRIMARY KEY, checked REAL,
@@ -59,3 +60,34 @@ def save_snapshot(ledger, report, now=None):
     with ledger.db:
         ledger.db.execute('INSERT INTO snapshots(checked,report) VALUES (?,?)',
                           (time.time() if now is None else now, json.dumps(report)))
+
+
+def watch_targets(ledger, manual, watchlist_path=None, now=None):
+    import math
+    import re
+    from copylab.portfolio import open_lots
+    now = time.time() if now is None else now
+    config = json.loads(Path(watchlist_path).read_text()) if watchlist_path else {'wallets':[]}
+    if not isinstance(config,dict) or not isinstance(config.get('wallets'),list):
+        raise ValueError('Invalid watchlist')
+    profiles = config.get('profiles',{})
+    if not isinstance(profiles,dict):
+        raise ValueError('Invalid wallet profiles')
+    configured = config['wallets']
+    if config.get('generated') is not None:
+        age = now-float(config['generated'])
+        if age < -60 or age > 7200:
+            configured=[]
+    if any(not isinstance(w,str) or not re.fullmatch(r'0x[0-9a-fA-F]{40}',w) for w in manual+configured):
+        raise ValueError('Invalid watched wallet')
+    selected = {w.lower() for w in manual+configured}
+    held={json.loads(lot[4]).get('proxyWallet','').lower() for lot in open_lots(ledger.db)}-{''}
+    targets={}
+    for wallet in selected|held:
+        profile=profiles.get(wallet,{})
+        max_cost=float(profile.get('max_cost',2))
+        if not math.isfinite(max_cost) or not 0<=max_cost<=2:
+            raise ValueError('Invalid copied position budget')
+        targets[wallet]=dict(allow_buys=wallet in selected,max_cost=max_cost,
+                             classification=profile.get('classification','manual'),name=profile.get('name',wallet))
+    return targets

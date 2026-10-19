@@ -65,10 +65,11 @@ class Ledger:
         return self.db.execute('SELECT 1 FROM seen WHERE id IN (?,?)',
                                (event_id(trade), legacy_id(trade))).fetchone() is not None
 
-    def process(self, trade, book, now):
+    def process(self, trade, book, now, max_cost=2, copy_group='manual'):
         if self.known(trade):
             return 'duplicate'
         key = event_id(trade)
+        trade = dict(trade, copy_group=copy_group)
         day = datetime.fromtimestamp(now, timezone.utc).date().isoformat()
         with self.db:
             if not self.db.execute('INSERT OR IGNORE INTO seen VALUES (?)', (key,)).rowcount:
@@ -85,8 +86,20 @@ class Ledger:
                 return 'already settled'
             if trade['side'] == 'SELL':
                 return self.sell(trade, book, now, key)
-            budget = min(2 - self.spend('WHERE asset=?', (asset,)),
+            budget = min(min(2, max_cost) - self.spend('WHERE asset=?', (asset,)),
                          8 - self.spend('WHERE day=?', (day,)), 40 - self.spend())
+            condition = trade.get('conditionId')
+            if condition:
+                market_spend = sum(cost for cost,source in self.db.execute('SELECT cost,source FROM fills')
+                                   if json.loads(source).get('conditionId') == condition)
+                budget = min(budget, 2-market_spend)
+            if copy_group == 'experimental':
+                source_wallet = trade.get('proxyWallet','').lower()
+                today = [(cost,json.loads(source)) for cost,source in self.db.execute(
+                    'SELECT cost,source FROM fills WHERE day=?',(day,))]
+                group_spend = sum(cost for cost,source in today if source.get('copy_group')=='experimental')
+                wallet_spend = sum(cost for cost,source in today if source.get('proxyWallet','').lower()==source_wallet)
+                budget = min(budget, 2-group_spend, 1-wallet_spend)
             if budget < 0.01:
                 return 'risk limit'
             levels = sorted((float(x['price']), float(x['size'])) for x in book['asks'])
@@ -156,7 +169,7 @@ class Ledger:
         return 'paper sell: $%.2f proceeds, %.4f shares' % (total_proceeds, total_shares)
 
 
-def scan(ledger, wallet, fetch=None, clock=None):
+def scan(ledger, wallet, fetch=None, clock=None, allow_buys=True, max_cost=2, copy_group='manual'):
     fetch = get if fetch is None else fetch
     clock = time.time if clock is None else clock
     trades = fetch('https://data-api.polymarket.com/trades', user=wallet, limit=500, takerOnly='false')
@@ -180,12 +193,14 @@ def scan(ledger, wallet, fetch=None, clock=None):
                     continue
                 if trade.get('proxyWallet', '').lower() != wallet or trade.get('side') not in ('BUY', 'SELL'):
                     continue
+                if trade['side'] == 'BUY' and not allow_buys:
+                    continue
                 if ledger.known(trade):
                     continue
                 book = fetch('https://clob.polymarket.com/book', token_id=trade['asset'])
                 if str(book.get('asset_id')) != str(trade['asset']):
                     raise ValueError('Order book identity mismatch')
-                result = ledger.process(trade, book, clock())
+                result = ledger.process(trade, book, clock(), max_cost=max_cost, copy_group=copy_group)
                 with ledger.db:
                     ledger.db.execute('INSERT OR REPLACE INTO decisions VALUES (?,?,?)',
                                       (event_id(trade), clock(), result))
@@ -201,6 +216,10 @@ def main():
     parser.add_argument('--db', default='paper.sqlite3')
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('leaderboard')
+    discovery = sub.add_parser('discover', help='Screen broad leaderboards and publish a dynamic watchlist')
+    discovery.add_argument('--policy', default='screening-policy.json')
+    discovery.add_argument('--output-dir', default='reports')
+    discovery.add_argument('--repeat', action='store_true', help='Refresh hourly using the policy interval')
     simulation = sub.add_parser('simulate', help='Offline synthetic scenarios; not a profitability backtest')
     simulation.add_argument('--output', default='simulation-results.json')
     report_parser = sub.add_parser('report', help='Export every paper trade and current profit')
@@ -228,6 +247,22 @@ def main():
         from copylab.simulation import run
         run(args.output)
         return
+    if args.command == 'discover':
+        from copylab.screening import discover, validate_policy
+        from pathlib import Path
+        while True:
+            policy = json.loads(Path(args.policy).read_text())
+            validate_policy(policy)
+            try:
+                discover(get, policy, args.output_dir)
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                if not args.repeat:
+                    raise
+                print('Discovery failed; prior watchlist retained:', str(error), flush=True)
+            if not args.repeat:
+                break
+            time.sleep(policy['refresh_seconds'])
+        return
     ledger = Ledger(args.db)
     if args.command == 'report':
         from copylab.report import export
@@ -250,15 +285,19 @@ def main():
         else:
             display(report)
         return
+    profiles = {}
     if args.wallet_file:
         from pathlib import Path
         config = json.loads(Path(args.wallet_file).read_text())
         if not isinstance(config, dict) or not isinstance(config.get('wallets'), list):
             parser.error('--wallet-file must contain a wallets list')
-        args.wallet.extend(config['wallets'])
-    if not args.wallet:
+        profiles = config.get('profiles', {})
+        configured_wallets = config['wallets']
+    else:
+        configured_wallets = []
+    if not args.wallet and not args.wallet_file:
         parser.error('Specify --wallet or --wallet-file')
-    if args.poll < 5 or any(not isinstance(w, str) or not re.fullmatch(r'0x[0-9a-fA-F]{40}', w) for w in args.wallet):
+    if args.poll < 5 or any(not isinstance(w, str) or not re.fullmatch(r'0x[0-9a-fA-F]{40}', w) for w in args.wallet+configured_wallets):
         parser.error('Use valid 0x wallet addresses and --poll of at least 5 seconds')
     if args.duration is not None and args.duration <= 0:
         parser.error('--duration must be positive')
@@ -266,9 +305,17 @@ def main():
         started = time.monotonic()
         print('SIMULATION ONLY. Ctrl+C stops monitoring.', flush=True)
         while True:
-            for wallet in dict.fromkeys(w.lower() for w in args.wallet):
+            try:
+                targets = runtime.watch_targets(ledger, args.wallet, args.wallet_file)
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                print('Watchlist unavailable; new entries paused:', str(error), flush=True)
+                targets = runtime.watch_targets(ledger, [], None)
+            with ledger.db:
+                ledger.db.execute('INSERT OR REPLACE INTO monitor VALUES (1,?,?)',
+                                  (time.time(), json.dumps(targets)))
+            for wallet, target in sorted(targets.items()):
                 try:
-                    scan(ledger, wallet)
+                    scan(ledger, wallet, allow_buys=target['allow_buys'], max_cost=target['max_cost'], copy_group=target['classification'])
                 except (OSError, ValueError, KeyError, TypeError) as error:
                     runtime.scan_result(ledger, wallet, error=str(error))
                     print('Wallet scan failed:', str(error), flush=True)

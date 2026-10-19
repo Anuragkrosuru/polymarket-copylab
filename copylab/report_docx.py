@@ -95,8 +95,11 @@ def build(report, output):
     document.add_paragraph('Updated '+report['generated'])
     account = report['account']
     if report['trades']:
-        document.add_paragraph('The paper account has recorded %d buys, %d copied sells, and %d settled positions. Total profit or loss is %s. This report lists every recorded trade and separates realized gains from estimated open gains.' %
-                               (account['fills'],account['sales'],account['settled_positions'],dollars(account['total_pnl'])))
+        document.add_paragraph('The paper account has recorded %d %s, %d copied %s, and %d settled %s. Total profit or loss is %s. This report lists every recorded trade and separates realized gains from estimated open gains.' %
+                               (account['fills'],'buy' if account['fills']==1 else 'buys',
+                                account['sales'],'sale' if account['sales']==1 else 'sales',
+                                account['settled_positions'],'position' if account['settled_positions']==1 else 'positions',
+                                dollars(account['total_pnl'])))
     else:
         document.add_paragraph('No qualifying copied trades have been recorded yet. The simulated account remains at $40 with $0 profit or loss. This report will update as the running bot records trades.')
     document.add_paragraph('This is a simulated account. No real money is traded. Synthetic test scenarios are excluded.')
@@ -130,9 +133,39 @@ def build(report, output):
             paragraph = document.add_paragraph('Source transaction '+clean(event['source_transaction']))
             for run in paragraph.runs:
                 run.font.size = Pt(8)
+    screening = report.get('screening')
+    if screening:
+        document.add_paragraph('Trader selection','Heading 1')
+        policy = screening['policy']
+        if screening.get('stale'):
+            document.add_paragraph('This screening is stale. New screened entries are paused; the list below shows the last selection.')
+        document.add_paragraph('%d distinct wallets were assessed across %d daily, weekly, monthly, and all time leaderboard slots. The current selection has %d core wallets and %d experimental wallets. Last screening completed %s.' %
+            (screening['assessed_count'],sum(c['leaderboard_slots'] for c in screening['coverage']),screening['selected_core'],screening['selected_experimental'],timestamp(screening['generated'])))
+        document.add_paragraph('Core screening requires at least %d distinct trade transactions, %d closed markets, and %d observed trading days in the sampled %d day window. Sampled profit must remain positive after excluding the largest winning market; that market may contribute at most %.0f percent of positive market profit. The minimum profit factor is %.1f.' %
+            (policy['min_transactions'],policy['min_closed_markets'],policy['min_active_days'],policy['lookback_days'],policy['max_largest_win_share']*100,policy['min_profit_factor']))
+        document.add_paragraph('Experimental wallets may have concentrated wins and weaker evidence. At most %d are selected, with a $%.2f copied position cap each, a $1 daily cap per experimental wallet, and a $2 daily cap for the experimental group. The overall $8 daily spending cap and $40 total purchase cap still apply. Trial in the list below means experimental. The full assessed list and exclusion reasons are saved in trader-screening.csv.' %
+            (policy['max_experimental_wallets'],policy['experimental_max_cost']))
+        document.add_paragraph(screening['caveat'])
+        document.add_paragraph('Open losses, deposits, off platform hedges and related wallets are not assessed. Passing this screen does not establish a copyable trading advantage or low risk.')
+        selected = screening['selected']
+        if selected:
+            table(document,['Trader','Group','Trades','Markets','Sample profit','Ex big win','Top win'],
+                [(r['name'],'Core' if r['classification']=='core' else 'Trial',str(r['transactions']),str(r['closed_markets']),dollars(r['sampled_realized_pnl']),dollars(r['profit_ex_largest_winner']),('%.0f%%'%(100*r['largest_winner_share'])) if r['largest_winner_share'] is not None else 'Unknown') for r in selected],
+                [1.7,.6,.6,.6,1.2,1.3,1.0])
+        else:
+            document.add_paragraph('No wallets currently satisfy the selection rules. New screened entries remain paused rather than relaxing the rules automatically.')
+        if screening['errors']:
+            document.add_paragraph('%d candidates could not be assessed because of API or data errors; they were not selected.'%screening['errors'])
     if account['scans']:
         document.add_paragraph('Monitoring progress','Heading 1')
-        for scan in account['scans']:
+        scans = account['scans']
+        if len(scans) > 5:
+            document.add_paragraph('%d source wallets monitored. Latest scan %s. Complete per wallet scan records are saved in trade-report.json.' %
+                (len(scans), timestamp(max(s['checked'] for s in scans))))
+            scans = [s for s in scans if s['error'] or report['generated_timestamp']-s['checked'] > 120]
+            if not scans:
+                document.add_paragraph('All monitored wallets have fresh scans without reported API errors.')
+        for scan in scans:
             state = scan['error'] or ('Polling normally' if report['generated_timestamp']-scan['checked'] <= 120 else 'Last scan is stale')
             paragraph = document.add_paragraph(clean(scan['wallet']))
             paragraph.paragraph_format.space_after = Pt(2)

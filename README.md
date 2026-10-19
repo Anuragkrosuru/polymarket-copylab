@@ -18,7 +18,7 @@ Leaderboard rankings are research candidates, not verified profitable strategies
 
 ## Simulation rules
 
-- $40 initial simulated cash; $2 maximum cumulative cost per outcome token.
+- $40 initial simulated cash; $2 maximum cumulative cost per market across all wallets and both outcomes, with a $2 per-outcome cap as well.
 - $8 maximum spending per UTC day. This is a spending cap, not a daily loss calculation.
 - New BUY and SELL activity only, maximum age 120 seconds; startup history is skipped.
 - Enforces the order book minimum share size for buys and exits; a $2 budget may be too small for many markets.
@@ -68,7 +68,7 @@ python3 -m unittest discover -s tests -v
 python3 -m copylab --help
 ```
 
-The 26 offline tests cover duplicate suppression, per-token/day/total caps, stale signals, minimum order sizes, adverse entry and exit prices, depth, fee reserves, full and partial source exits, open P/L, winning and losing settlement, restart-safe payouts and sales, missing/stale quotes, request retries, isolated event failures, watcher locking, synthetic integration scenarios, and existing database migration. Live verification passed on October 19, 2026 with network permission: leaderboard lookup, public wallet trade feed, public order-book schema, and two watcher scans using a temporary ledger. Startup history was skipped and no simulated buys occurred during those scans. This verifies connectivity, not strategy profitability or real execution.
+The 41 offline tests cover duplicate suppression, per-token/day/total caps, stale signals, minimum order sizes, adverse entry and exit prices, depth, fee reserves, full and partial source exits, open P/L, winning and losing settlement, restart-safe payouts and sales, missing/stale quotes, request retries, isolated event failures, watcher locking, synthetic integration scenarios, and existing database migration. Live verification passed on October 19, 2026 with network permission: leaderboard lookup, public wallet trade feed, public order-book schema, and two watcher scans using a temporary ledger. Startup history was skipped and no simulated buys occurred during those scans. This verifies connectivity, not strategy profitability or real execution.
 
 ## Public API references
 
@@ -111,3 +111,31 @@ Exports every copied buy, sell, and settlement to `reports/trade-history.csv`, a
 For automatic updates, start the watcher with `--report-dir reports --docx-python /path/to/python`. The current Mac background trial uses the bundled document Python and updates the same report after each poll. Other computers can use any Python with `python-docx` for the optional Word exporter. Core monitoring and CSV exports do not require extra packages.
 
 The report separates cash changes, simulated fee reserves, realized sale and settlement gains, and estimated open gains. Source trade times are labeled when an older fill has no recorded copy time. Runtime reports remain local and are excluded from Git. Open the Word file again or reload it to see subsequent changes.
+
+## Broad trader screening
+
+```sh
+python3 -m copylab discover --policy screening-policy.json --output-dir reports
+python3 -m copylab discover --policy screening-policy.json --output-dir reports --repeat
+python3 -m copylab watch --wallet-file reports/screened-watchlist.json --report-dir reports --poll 30
+```
+
+Discovery covers the top 100 positive-PnL entries in each global daily, weekly, monthly, and all-time leaderboard: up to 400 ranking slots, deduplicated by wallet. These global boards span markets, but this is not every profitable wallet on Polymarket. The default policy examines up to 1,500 recent trade fills and 200 closed positions per wallet within a 30-day window. Caps and data failures are visible in the export; sampled P/L is not a complete account return.
+
+Main screening defaults:
+
+- At least 50 distinct transaction hashes containing trades, not 50 partial fills from one transaction.
+- At least 20 distinct closed markets and 5 observed trading days.
+- Positive sampled closed-market P/L, still positive after excluding the largest winning market.
+- Largest winning market at most 50% of gross positive market P/L; profit factor at least 1.2.
+- A source trade observed within the past 24 hours.
+
+The bot can select up to 20 main wallets and 2 experimental wallets. Experimental candidates need at least 10 trade transactions, 3 closed markets, and 2 trading days, but can have profit concentrated in one winner. Their copied position cap is $1, with a $1 daily cap per experimental wallet and a $2 daily cap for the whole experimental group. The $2 main position limit, $8 daily spending cap, and $40 cumulative purchase cap remain. Multiple wallets cannot increase cumulative spending in the same market above $2 by choosing different outcomes. The ranking is a transparent heuristic based on sample size and spread of results, not a prediction of profit or a verified risk classification.
+
+`reports/trader-screening.csv` lists every assessed wallet, observed counts, sampled profit, largest-winner dependence, capped history, classification, and exclusion reasons. `reports/trader-screening.json` retains detailed coverage and policy. The Word report adds the selection rules and selected traders. An empty selection pauses screened buys; it never silently weakens the criteria.
+
+The discovery process refreshes hourly. The watcher reloads the published list every cycle, stops new screened entries if it is more than two hours old, and keeps monitoring sells for held positions when their source wallet leaves the selection. Discovery uses limited parallel public requests and publishes results atomically. Discovery and watcher are separate local processes; both require an awake computer.
+
+Current limitations: closed-history samples may omit losses outside the fetched pages; open losing positions, capital, deposits, off-platform hedges, and account control relationships are not assessed. Multiple wallets can belong to one trader. Neither the leaderboard nor this screen establishes a copyable advantage. Main means passing these sample screens, not low risk.
+
+Public endpoint reference for the realized P/L field: https://docs.polymarket.com/api-reference/core/get-closed-positions-for-a-user

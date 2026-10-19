@@ -1,0 +1,22 @@
+{
+  "periods": ["DAY", "WEEK", "MONTH", "ALL"],
+  "top_per_period": 100,
+  "lookback_days": 30,
+  "trade_pages": 3,
+  "closed_pages": 4,
+  "min_transactions": 50,
+  "min_closed_markets": 20,
+  "min_active_days": 5,
+  "max_largest_win_share": 0.5,
+  "min_profit_factor": 1.2,
+  "max_hours_since_trade": 24,
+  "max_core_wallets": 20,
+  "max_experimental_wallets": 2,
+  "experimental_min_transactions": 10,
+  "experimental_min_closed_markets": 3,
+  "experimental_min_active_days": 2,
+  "experimental_max_cost": 1,
+  "refresh_seconds": 3600,
+  "workers": 4,
+  "requests_per_second": 8
+}

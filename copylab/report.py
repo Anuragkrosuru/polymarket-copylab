@@ -23,7 +23,7 @@ def timestamp(value):
 
 
 def dollars(value):
-    return 'Unknown' if value is None else '$%.2f' % value
+    return 'Unknown' if value is None else ('-$%.2f' % abs(value) if value < 0 else '$%.2f' % value)
 
 
 def collect(ledger, now=None):
@@ -90,6 +90,15 @@ def export(ledger, directory, docx_python=None, now=None):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     report = collect(ledger, now)
+    screen_path = directory/'trader-screening.json'
+    if screen_path.exists():
+        try:
+            screen = json.loads(screen_path.read_text())
+            report['screening'] = {key:screen[key] for key in ('generated','sample_as_of','candidate_count','assessed_count','selected_core','selected_experimental','errors','policy','coverage','caveat')}
+            report['screening']['stale'] = report['generated_timestamp']-screen['generated'] > 7200
+            report['screening']['selected'] = [r for r in screen['traders'] if r['selected']]
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            report['screening_error'] = str(error)
     atomic_write(directory/'trade-report.json', json.dumps(report, indent=2)+'\n')
     fields = ['number','type','time','time_basis','market','outcome','wallet','shares','price',
               'gross','fee_reserve','cost_basis','cash_change','realized_pnl','asset','source_transaction','event_id']
