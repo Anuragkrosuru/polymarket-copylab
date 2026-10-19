@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from urllib.error import URLError
+from copylab.portfolio import initialize, refresh, summary, display
 
 
 def get(url, **params):
@@ -26,6 +27,7 @@ class Ledger:
         CREATE TABLE IF NOT EXISTS fills(id TEXT PRIMARY KEY, day TEXT, asset TEXT,
             price REAL, shares REAL, cost REAL, source TEXT);
         ''')
+        initialize(self.db)
 
     def spend(self, where='', args=()):
         return self.db.execute('SELECT COALESCE(SUM(cost),0) FROM fills ' + where, args).fetchone()[0]
@@ -43,6 +45,8 @@ class Ledger:
             if not math.isfinite(source_price) or not 0 < source_price < 1:
                 return 'invalid source price'
             asset = str(trade['asset'])
+            if self.db.execute('SELECT 1 FROM settlements WHERE asset=?', (asset,)).fetchone():
+                return 'already settled'
             budget = min(2 - self.spend('WHERE asset=?', (asset,)),
                          8 - self.spend('WHERE day=?', (day,)), 40 - self.spend())
             if budget < 0.01:
@@ -95,7 +99,9 @@ def main():
     parser.add_argument('--db', default='paper.sqlite3')
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('leaderboard')
-    sub.add_parser('status')
+    status = sub.add_parser('status')
+    status.add_argument('--offline', action='store_true', help='Use saved valuations, expire after 120 seconds')
+    status.add_argument('--json', action='store_true', help='Print machine-readable portfolio')
     watch = sub.add_parser('watch')
     watch.add_argument('--wallet', action='append', required=True)
     watch.add_argument('--poll', type=int, default=30)
@@ -107,8 +113,13 @@ def main():
         return
     ledger = Ledger(args.db)
     if args.command == 'status':
-        print('SIMULATION | Cash: $%.2f | Open cost including reserve: $%.2f | Fills: %d' %
-              (40 - ledger.spend(), ledger.spend(), ledger.db.execute('SELECT COUNT(*) FROM fills').fetchone()[0]))
+        if not args.offline:
+            refresh(ledger, get)
+        report = summary(ledger)
+        if args.json:
+            print(json.dumps(report, indent=2))
+        else:
+            display(report)
         return
     if args.poll < 5 or any(not re.fullmatch(r'0x[0-9a-fA-F]{40}', w) for w in args.wallet):
         parser.error('Use valid 0x wallet addresses and --poll of at least 5 seconds')
@@ -119,6 +130,8 @@ def main():
                 scan(ledger, wallet)
             except (URLError, ValueError, KeyError, TypeError) as error:
                 print('Scan failed; no fill assumed:', str(error), flush=True)
+        refresh(ledger, get)
+        display(summary(ledger))
         if args.once:
             break
         time.sleep(args.poll)
