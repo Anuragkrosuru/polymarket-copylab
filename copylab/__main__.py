@@ -172,10 +172,10 @@ class Ledger:
         return 'paper sell: $%.2f proceeds, %.4f shares' % (total_proceeds, total_shares)
 
 
-def scan(ledger, wallet, fetch=None, clock=None, allow_buys=True, max_cost=2, copy_group='manual'):
+def scan(ledger, wallet, fetch=None, clock=None, allow_buys=True, max_cost=2, copy_group='manual', prefetched=None):
     fetch = get if fetch is None else fetch
     clock = time.time if clock is None else clock
-    trades = fetch('https://data-api.polymarket.com/trades', user=wallet, limit=500, takerOnly='false')
+    trades = prefetched if prefetched is not None else fetch('https://data-api.polymarket.com/trades', user=wallet, limit=500, takerOnly='false')
     if not isinstance(trades, list):
         raise ValueError('Unexpected trades API schema')
     now = clock()
@@ -237,7 +237,8 @@ def main():
     watch = sub.add_parser('watch')
     watch.add_argument('--wallet', action='append', default=[])
     watch.add_argument('--wallet-file', help='JSON file containing a wallets list')
-    watch.add_argument('--poll', type=int, default=30)
+    watch.add_argument('--poll', type=int, default=5)
+    watch.add_argument('--report-every', type=int, default=30, help='Seconds between saved reports and snapshots')
     watch.add_argument('--once', action='store_true')
     watch.add_argument('--report-dir', help='Refresh trade report after every poll')
     watch.add_argument('--docx-python', help='Python executable with python-docx for Word reports')
@@ -307,12 +308,19 @@ def main():
         parser.error('Specify --wallet or --wallet-file')
     if args.poll < 5 or any(not isinstance(w, str) or not re.fullmatch(r'0x[0-9a-fA-F]{40}', w) for w in args.wallet+configured_wallets):
         parser.error('Use valid 0x wallet addresses and --poll of at least 5 seconds')
+    if args.report_every < 5:
+        parser.error('--report-every must be at least 5 seconds')
     if args.duration is not None and args.duration <= 0:
         parser.error('--duration must be positive')
     with runtime.watcher_lock(args.db):
         started = time.monotonic()
         print('SIMULATION ONLY. Ctrl+C stops monitoring.', flush=True)
+        previous_cycle = None
+        last_report = None
         while True:
+            cycle_started = time.monotonic()
+            observed_interval = cycle_started-previous_cycle if previous_cycle is not None else None
+            previous_cycle = cycle_started
             try:
                 targets = runtime.watch_targets(ledger, args.wallet, args.wallet_file)
             except (OSError, ValueError, KeyError, TypeError) as error:
@@ -321,28 +329,43 @@ def main():
             with ledger.db:
                 ledger.db.execute('INSERT OR REPLACE INTO monitor VALUES (1,?,?)',
                                   (time.time(), json.dumps(targets)))
-            for wallet, target in sorted(targets.items()):
+            for wallet, trades, error in runtime.wallet_feeds(targets, get):
+                target = targets[wallet]
+                if error is not None:
+                    runtime.scan_result(ledger, wallet, error=error)
+                    print('Wallet feed failed:', wallet, error, flush=True)
+                    continue
                 try:
-                    scan(ledger, wallet, allow_buys=target['allow_buys'], max_cost=target['max_cost'], copy_group=target['classification'])
+                    scan(ledger, wallet, allow_buys=target['allow_buys'], max_cost=target['max_cost'], copy_group=target['classification'], prefetched=trades)
                 except (OSError, ValueError, KeyError, TypeError) as error:
                     runtime.scan_result(ledger, wallet, error=str(error))
                     print('Wallet scan failed:', str(error), flush=True)
             refresh(ledger, get)
-            report = summary(ledger)
-            runtime.save_snapshot(ledger, report)
-            display(report)
-            if args.report_dir:
-                from copylab.report import export
-                import subprocess
-                try:
-                    export(ledger, args.report_dir, args.docx_python)
-                except (OSError, ValueError, subprocess.SubprocessError) as error:
-                    print('Report export failed; watcher continues:', str(error), flush=True)
+            with ledger.db:
+                ledger.db.execute('INSERT OR REPLACE INTO polling VALUES (1,?,?,?,?)',
+                                  (time.time(), args.poll, observed_interval, time.monotonic()-cycle_started))
             elapsed = time.monotonic() - started
-            if args.once or (args.duration is not None and elapsed >= args.duration):
+            finished = args.once or (args.duration is not None and elapsed >= args.duration)
+            if last_report is None or time.monotonic()-last_report >= args.report_every or finished:
+                report = summary(ledger)
+                runtime.save_snapshot(ledger, report)
+                display(report)
+                if args.report_dir:
+                    from copylab.report import export
+                    import subprocess
+                    try:
+                        export(ledger, args.report_dir, args.docx_python)
+                    except (OSError, ValueError, subprocess.SubprocessError) as error:
+                        print('Report export failed; watcher continues:', str(error), flush=True)
+                last_report = time.monotonic()
+            elapsed = time.monotonic()-started
+            if finished or (args.duration is not None and elapsed >= args.duration):
                 break
-            delay = args.poll if args.duration is None else min(args.poll, args.duration-elapsed)
-            time.sleep(max(0, delay))
+            delay = max(0, args.poll-(time.monotonic()-cycle_started))
+            if args.duration is not None:
+                delay = min(delay, max(0, args.duration-elapsed))
+            time.sleep(delay)
+
 
 
 

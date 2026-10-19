@@ -141,6 +141,7 @@ def summary(ledger, now=None):
     health = ledger.db.execute('SELECT checked FROM health WHERE id=1').fetchone()
     monitor = ledger.db.execute('SELECT targets FROM monitor WHERE id=1').fetchone()
     targets = json.loads(monitor[0]) if monitor else None
+    polling = ledger.db.execute('SELECT checked,target_seconds,observed_seconds,work_seconds FROM polling WHERE id=1').fetchone()
     return dict(mode='SIMULATION', cash=cash, initial_cash=40, open_cost=open_cost,
                 open_value=value if not missing else None, realized_pnl=payout-settled_cost+sale_proceeds-sale_cost,
                 sale_pnl=sale_proceeds-sale_cost, settlement_pnl=payout-settled_cost,
@@ -151,6 +152,7 @@ def summary(ledger, now=None):
                 fills=ledger.db.execute('SELECT COUNT(*) FROM fills').fetchone()[0],
                 settled_positions=ledger.db.execute('SELECT COUNT(*) FROM settlements').fetchone()[0],
                 unpriced_positions=missing, positions=positions,
+                polling=dict(checked=polling[0], target_seconds=polling[1], observed_seconds=polling[2], work_seconds=polling[3]) if polling else None,
                 last_refresh=health[0] if health else None, monitored_wallets=targets,
                 decision_counts={r[0]: r[1] for r in ledger.db.execute(
                     'SELECT result, COUNT(*) FROM decisions GROUP BY result')},
@@ -179,6 +181,10 @@ def display(report):
         print('  %s [%s] | Cost: %s | Bid value: %s | P/L: %s | %s' %
               (position['title'], position['outcome'], dollars(position['cost']),
                dollars(position['value']), dollars(position['pnl']), position['note']), flush=True)
+    if report.get('polling'):
+        polling = report['polling']
+        print('Polling target: %.1fs | Measured cycle interval: %s' %
+              (polling['target_seconds'], ('%.1fs' % polling['observed_seconds']) if polling['observed_seconds'] is not None else 'starting'), flush=True)
     if report['last_refresh'] is not None:
         stamp = datetime.fromtimestamp(report['last_refresh'], timezone.utc).isoformat(timespec='seconds')
         print('Last valuation refresh: ' + stamp, flush=True)

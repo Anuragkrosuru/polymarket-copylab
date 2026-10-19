@@ -8,7 +8,7 @@ From this folder on Mac:
 
 ```sh
 python3 -m copylab leaderboard
-python3 -m copylab watch --wallet-file watchlist.json --poll 30
+python3 -m copylab watch --wallet-file watchlist.json --poll 5
 python3 -m copylab status
 ```
 
@@ -40,7 +40,7 @@ python3 -m copylab status --json
 python3 -m copylab status --offline
 ```
 
-`status` refreshes held positions from public APIs. The watcher also prints a fresh report after each polling cycle. Reports show:
+`status` refreshes held positions from public APIs. The watcher also prints a fresh report about every 30 seconds while checking feeds on a five-second target cycle. Reports show:
 
 - **Cash:** initial $40 minus purchase costs (including the entry reserve), plus net simulated sale proceeds and settlement payouts.
 - **Open P/L:** estimated net bid liquidation value minus the cost of open positions.
@@ -59,7 +59,7 @@ python3 -m copylab history --limit 20
 
 `simulate` runs three **invented integration scenarios**, using the same scanner, execution rules, fees, and accounting as the live paper watcher, in separate temporary ledgers. It writes `simulation-results.json`. Favorable, mixed, and adverse outcomes demonstrate how gains and losses are calculated; they are not historical results, win-rate estimates, or predictions. Never combine these results with the live paper ledger.
 
-The watcher saves a portfolio snapshot after every poll. `history` returns snapshots as JSON. `status --json` includes scan timestamps, source activity age, errors, and decisions explaining skipped trades. Network requests retry transient failures up to three times; a failed event does not block other events. Failed valuations stay unknown. The watcher runs only while its process is active and the computer is awake.
+The watcher checks feeds on a five-second target cycle and saves reports and snapshots about every 30 seconds. `history` returns snapshots as JSON. `status --json` includes scan timestamps, source activity age, errors, and decisions explaining skipped trades. Network requests retry transient failures up to three times; a failed event does not block other events. Failed valuations stay unknown. The watcher runs only while its process is active and the computer is awake.
 
 ## Verification
 
@@ -68,7 +68,7 @@ python3 -m unittest discover -s tests -v
 python3 -m copylab --help
 ```
 
-The 45 offline tests cover duplicate suppression, per-token/day/total caps, stale signals, minimum order sizes, adverse entry and exit prices, depth, fee reserves, full and partial source exits, open P/L, winning and losing settlement, restart-safe payouts and sales, missing/stale quotes, request retries, isolated event failures, watcher locking, synthetic integration scenarios, and existing database migration. Live verification passed on October 19, 2026 with network permission: leaderboard lookup, public wallet trade feed, public order-book schema, and two watcher scans using a temporary ledger. Startup history was skipped and no simulated buys occurred during those scans. This verifies connectivity, not strategy profitability or real execution.
+The 47 offline tests cover duplicate suppression, per-token/day/total caps, stale signals, minimum order sizes, adverse entry and exit prices, depth, fee reserves, full and partial source exits, open P/L, winning and losing settlement, restart-safe payouts and sales, missing/stale quotes, request retries, isolated event failures, watcher locking, synthetic integration scenarios, and existing database migration. Live verification passed on October 19, 2026 with network permission: leaderboard lookup, public wallet trade feed, public order-book schema, and two watcher scans using a temporary ledger. Startup history was skipped and no simulated buys occurred during those scans. This verifies connectivity, not strategy profitability or real execution.
 
 ## Public API references
 
@@ -95,7 +95,7 @@ kill -TERM "$(cat paper.pid)"
 To restart in the foreground:
 
 ```sh
-python3 -u -m copylab watch --wallet-file watchlist.json --poll 30
+python3 -u -m copylab watch --wallet-file watchlist.json --poll 5
 ```
 
 There is no system startup service or cloud hosting configured. A sleeping or powered-off computer does not collect trades. A profitable-looking snapshot or synthetic scenario is not a validated profitable strategy.
@@ -108,7 +108,7 @@ python3 -m copylab report --output-dir reports
 
 Exports every copied buy, sell, and settlement to `reports/trade-history.csv`, along with a current account report in Markdown and JSON. It reads the latest saved valuations; use `status` first if you need a manual price refresh. Add `--docx-python /path/to/python` to also generate `reports/trade-report.docx` using a Python environment with `python-docx` installed.
 
-For automatic updates, start the watcher with `--report-dir reports --docx-python /path/to/python`. The current Mac background trial uses the bundled document Python and updates the same report after each poll. Other computers can use any Python with `python-docx` for the optional Word exporter. Core monitoring and CSV exports do not require extra packages.
+For automatic updates, start the watcher with `--report-dir reports --docx-python /path/to/python`. The current Mac background trial uses the bundled document Python and updates the same report about every 30 seconds. Other computers can use any Python with `python-docx` for the optional Word exporter. Core monitoring and CSV exports do not require extra packages.
 
 The report separates cash changes, simulated fee reserves, realized sale and settlement gains, and estimated open gains. Source trade times are labeled when an older fill has no recorded copy time. Runtime reports remain local and are excluded from Git. Open the Word file again or reload it to see subsequent changes.
 
@@ -117,7 +117,7 @@ The report separates cash changes, simulated fee reserves, realized sale and set
 ```sh
 python3 -m copylab discover --policy screening-policy.json --output-dir reports
 python3 -m copylab discover --policy screening-policy.json --output-dir reports --repeat
-python3 -m copylab watch --wallet-file reports/screened-watchlist.json --report-dir reports --poll 30
+python3 -m copylab watch --wallet-file reports/screened-watchlist.json --report-dir reports --poll 5
 ```
 
 Discovery covers the top 100 positive-PnL entries in each global daily, weekly, monthly, and all-time leaderboard: up to 400 ranking slots, deduplicated by wallet. These global boards span markets, but this is not every profitable wallet on Polymarket. The default policy examines up to 1,500 recent trade fills and 200 closed positions per wallet within a 30-day window. Caps and data failures are visible in the export; sampled P/L is not a complete account return.
@@ -141,3 +141,11 @@ Current limitations: closed-history samples may omit losses outside the fetched 
 Public endpoint reference for the realized P/L field: https://docs.polymarket.com/api-reference/core/get-closed-positions-for-a-user
 
 Entry controls limit price deterioration relative to the source trade as well as in cents. For example, a source entry at 3.3 cents cannot be copied at 4.7 cents. No minimum trading frequency is enforced: a wider watchlist creates more opportunities to inspect, while the budget, minimum market share sizes, freshness rules, and entry price checks still determine whether a simulated buy is made. Several positions may be open simultaneously; $8 daily spending permits four full $2 entries, or more smaller entries when minimum sizes allow.
+
+## Faster wallet monitoring
+
+The default `--poll 5` targets five seconds between cycle starts rather than sleeping five seconds after all work completes. Four concurrent workers retrieve public wallet feeds, limited to ten request starts per second. Wallet feeds are processed as they arrive; all SQLite writes stay on the main thread. Quotes for candidate entries are fetched immediately before applying the entry checks. Reports remain on a separate `--report-every 30` interval so Word rendering does not need to run on every data check.
+
+`status --json` includes a `polling` object with requested and observed cycle intervals. Network delays, upstream publication delays, retries, and bursts of candidate trades can make actual intervals longer. Faster polling cannot recover the source trader's original entry price. The public market WebSocket is not a replacement for identifying every arbitrary wallet trade, so this version uses measured, rate-limited public polling.
+
+Polymarket documents a v1 `/trades` limit of 200 requests per 10 seconds: https://docs.polymarket.com/api-reference/rate-limits

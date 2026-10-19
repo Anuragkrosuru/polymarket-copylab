@@ -35,6 +35,7 @@ def watcher_lock(database):
 
 def initialize(db):
     db.executescript('''
+    CREATE TABLE IF NOT EXISTS polling(id INTEGER PRIMARY KEY CHECK(id=1), checked REAL, target_seconds REAL, observed_seconds REAL, work_seconds REAL);
     CREATE TABLE IF NOT EXISTS monitor(id INTEGER PRIMARY KEY CHECK(id=1), checked REAL, targets TEXT);
     CREATE TABLE IF NOT EXISTS scans(wallet TEXT PRIMARY KEY, checked REAL,
         newest REAL, records INTEGER, error TEXT);
@@ -91,3 +92,33 @@ def watch_targets(ledger, manual, watchlist_path=None, now=None):
         targets[wallet]=dict(allow_buys=wallet in selected,max_cost=max_cost,
                              classification=profile.get('classification','manual'),name=profile.get('name',wallet))
     return targets
+
+
+def wallet_feeds(targets, fetch, workers=4, requests_per_second=10):
+    """Concurrent public reads; callers keep all ledger writes on their own thread.
+
+    Limit starts to 10/s, below the documented 20/s trades limit and leaving
+    room for the separate 8/s discovery process. Requests may still be delayed
+    by the network or the upstream API.
+    """
+    import threading
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    lock=threading.Lock()
+    next_start=[0.0]
+    def read(wallet):
+        with lock:
+            delay=next_start[0]-time.monotonic()
+            if delay>0:
+                time.sleep(delay)
+            next_start[0]=time.monotonic()+1/requests_per_second
+        try:
+            trades=fetch('https://data-api.polymarket.com/trades',user=wallet,limit=500,takerOnly='false')
+            if not isinstance(trades,list):
+                raise ValueError('Unexpected trades API schema')
+            return wallet,trades,None
+        except (OSError,ValueError,KeyError,TypeError) as error:
+            return wallet,None,str(error)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures=[pool.submit(read,wallet) for wallet in sorted(targets)]
+        for future in as_completed(futures):
+            yield future.result()

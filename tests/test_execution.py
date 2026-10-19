@@ -127,6 +127,30 @@ class ExecutionTests(unittest.TestCase):
                 get('https://example.com')
             self.assertEqual(1, request.call_count)
 
+    def test_parallel_feeds_isolate_failure_and_return_other_wallets(self):
+        from copylab.runtime import wallet_feeds
+        def fetch(url,**params):
+            if params['user']=='failed':
+                raise OSError('feed unavailable')
+            return [self.trade]
+        rows={wallet:(trades,error) for wallet,trades,error in wallet_feeds(['good','failed'],fetch,requests_per_second=1000)}
+        self.assertIsNone(rows['good'][1])
+        self.assertEqual([self.trade],rows['good'][0])
+        self.assertIn('feed unavailable',rows['failed'][1])
+
+    def test_prefetched_scan_does_not_fetch_wallet_feed_twice(self):
+        with self.ledger.db:
+            self.ledger.db.execute('INSERT INTO wallets VALUES (?,?)',(self.wallet,self.now-1))
+        calls=[]
+        def fetch(url,**params):
+            calls.append(url)
+            self.assertTrue(url.endswith('/book'))
+            return self.book
+        with contextlib.redirect_stdout(io.StringIO()):
+            scan(self.ledger,self.wallet,fetch,lambda:self.now,prefetched=[self.trade])
+        self.assertEqual(1,len(calls))
+        self.assertEqual(1,summary(self.ledger,self.now)['fills'])
+
     def test_synthetic_scenarios_report_both_gains_and_losses(self):
         gain = scenario('gain', (.65, .6), (True, True))
         loss = scenario('loss', (.3, .25), (False, False))
