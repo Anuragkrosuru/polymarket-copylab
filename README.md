@@ -35,7 +35,7 @@ python3 -m unittest discover -s tests -v
 python3 -m copylab --help
 ```
 
-Offline tests cover duplicate suppression, per-token/day/total caps, stale signals, adverse entry prices, depth, and cost reserves. Live API connectivity has not been verified in the build environment because DNS access was unavailable.
+Offline tests cover duplicate suppression, per-token/day/total caps, stale signals, adverse entry prices, depth, and cost reserves. Live verification passed on October 19, 2026 with network permission: leaderboard lookup, public wallet trade feed, public order-book schema, and two watcher scans using a temporary ledger. Startup history was skipped and no simulated buys occurred during those scans. This verifies connectivity, not strategy profitability or real execution.
 
 ## Public API references
 
