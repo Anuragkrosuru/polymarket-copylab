@@ -22,7 +22,7 @@ Leaderboard rankings are research candidates, not verified profitable strategies
 - $8 maximum spending per UTC day. This is a spending cap, not a daily loss calculation.
 - New BUY and SELL activity only, maximum age 120 seconds; startup history is skipped.
 - Enforces the order book minimum share size for buys and exits; a $2 budget may be too small for many markets.
-- Copies only at asking prices no more than 0.02 above the source price; walks visible ask depth and allows partial simulated fills.
+- Copies only at asking prices no more than the smaller of 5% or 0.02 above the source price; walks visible ask depth and allows partial simulated fills.
 - Adds a fixed 2% cost reserve, which is an assumption, not Polymarket's actual market-specific fee calculation.
 - SQLite saves fills and processed events across restarts. `--db PATH` before the command selects another ledger.
 - Open positions are valued by walking current bid depth and deducting a 2% estimated exit cost. Unfilled shares receive zero immediate liquidation value. This is a conservative estimate, not a guaranteed sale.
@@ -68,7 +68,7 @@ python3 -m unittest discover -s tests -v
 python3 -m copylab --help
 ```
 
-The 41 offline tests cover duplicate suppression, per-token/day/total caps, stale signals, minimum order sizes, adverse entry and exit prices, depth, fee reserves, full and partial source exits, open P/L, winning and losing settlement, restart-safe payouts and sales, missing/stale quotes, request retries, isolated event failures, watcher locking, synthetic integration scenarios, and existing database migration. Live verification passed on October 19, 2026 with network permission: leaderboard lookup, public wallet trade feed, public order-book schema, and two watcher scans using a temporary ledger. Startup history was skipped and no simulated buys occurred during those scans. This verifies connectivity, not strategy profitability or real execution.
+The 45 offline tests cover duplicate suppression, per-token/day/total caps, stale signals, minimum order sizes, adverse entry and exit prices, depth, fee reserves, full and partial source exits, open P/L, winning and losing settlement, restart-safe payouts and sales, missing/stale quotes, request retries, isolated event failures, watcher locking, synthetic integration scenarios, and existing database migration. Live verification passed on October 19, 2026 with network permission: leaderboard lookup, public wallet trade feed, public order-book schema, and two watcher scans using a temporary ledger. Startup history was skipped and no simulated buys occurred during those scans. This verifies connectivity, not strategy profitability or real execution.
 
 ## Public API references
 
@@ -130,7 +130,7 @@ Main screening defaults:
 - Largest winning market at most 50% of gross positive market P/L; profit factor at least 1.2.
 - A source trade observed within the past 24 hours.
 
-The bot can select up to 20 main wallets and 2 experimental wallets. Experimental candidates need at least 10 trade transactions, 3 closed markets, and 2 trading days, but can have profit concentrated in one winner. Their copied position cap is $1, with a $1 daily cap per experimental wallet and a $2 daily cap for the whole experimental group. The $2 main position limit, $8 daily spending cap, and $40 cumulative purchase cap remain. Multiple wallets cannot increase cumulative spending in the same market above $2 by choosing different outcomes. The ranking is a transparent heuristic based on sample size and spread of results, not a prediction of profit or a verified risk classification.
+The bot can select up to 40 main wallets and 2 experimental wallets. Among wallets that pass the same screens, those with a source trade in the past hour are prioritized before the sample score. Experimental candidates need at least 10 trade transactions, 3 closed markets, and 2 trading days, but can have profit concentrated in one winner. Their copied position cap is $1, with a $1 daily cap per experimental wallet and a $2 daily cap for the whole experimental group. The $2 main position limit, $8 daily spending cap, and $40 cumulative purchase cap remain. Multiple wallets cannot increase cumulative spending in the same market above $2 by choosing different outcomes. The ranking is a transparent heuristic based on sample size and spread of results, not a prediction of profit or a verified risk classification.
 
 `reports/trader-screening.csv` lists every assessed wallet, observed counts, sampled profit, largest-winner dependence, capped history, classification, and exclusion reasons. `reports/trader-screening.json` retains detailed coverage and policy. The Word report adds the selection rules and selected traders. An empty selection pauses screened buys; it never silently weakens the criteria.
 
@@ -139,3 +139,5 @@ The discovery process refreshes hourly. The watcher reloads the published list e
 Current limitations: closed-history samples may omit losses outside the fetched pages; open losing positions, capital, deposits, off-platform hedges, and account control relationships are not assessed. Multiple wallets can belong to one trader. Neither the leaderboard nor this screen establishes a copyable advantage. Main means passing these sample screens, not low risk.
 
 Public endpoint reference for the realized P/L field: https://docs.polymarket.com/api-reference/core/get-closed-positions-for-a-user
+
+Entry controls limit price deterioration relative to the source trade as well as in cents. For example, a source entry at 3.3 cents cannot be copied at 4.7 cents. No minimum trading frequency is enforced: a wider watchlist creates more opportunities to inspect, while the budget, minimum market share sizes, freshness rules, and entry price checks still determine whether a simulated buy is made. Several positions may be open simultaneously; $8 daily spending permits four full $2 entries, or more smaller entries when minimum sizes allow.

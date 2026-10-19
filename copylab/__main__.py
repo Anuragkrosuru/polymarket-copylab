@@ -108,7 +108,7 @@ class Ledger:
             for price, size in levels:
                 if not all(math.isfinite(x) for x in (price, size)) or not 0 < price < 1 or size <= 0:
                     continue
-                if price > source_price + 0.02:
+                if price > source_price + min(0.02, source_price * 0.05) + 1e-12:
                     break
                 take = min(size, remaining / price)
                 shares += take
@@ -117,6 +117,9 @@ class Ledger:
                 if remaining < 1e-9:
                     break
             if shares == 0:
+                valid_prices = [price for price,size in levels if math.isfinite(price) and math.isfinite(size) and 0 < price < 1 and size > 0]
+                if valid_prices and min(valid_prices) > source_price + min(0.02, source_price*0.05) + 1e-12:
+                    return 'entry price exceeds 5 percent or 2 cent limit'
                 return 'no acceptable liquidity'
             minimum = float(book.get('min_order_size', 0))
             if not math.isfinite(minimum) or minimum < 0:
@@ -219,6 +222,7 @@ def main():
     discovery = sub.add_parser('discover', help='Screen broad leaderboards and publish a dynamic watchlist')
     discovery.add_argument('--policy', default='screening-policy.json')
     discovery.add_argument('--output-dir', default='reports')
+    discovery.add_argument('--defer-first', action='store_true', help='Wait one refresh interval before the first discovery run')
     discovery.add_argument('--repeat', action='store_true', help='Refresh hourly using the policy interval')
     simulation = sub.add_parser('simulate', help='Offline synthetic scenarios; not a profitability backtest')
     simulation.add_argument('--output', default='simulation-results.json')
@@ -250,6 +254,10 @@ def main():
     if args.command == 'discover':
         from copylab.screening import discover, validate_policy
         from pathlib import Path
+        if args.defer_first:
+            policy = json.loads(Path(args.policy).read_text())
+            validate_policy(policy)
+            time.sleep(policy['refresh_seconds'])
         while True:
             policy = json.loads(Path(args.policy).read_text())
             validate_policy(policy)

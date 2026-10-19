@@ -154,19 +154,40 @@ def discover(fetch, policy, directory, now=None):
             results.append(future.result())
             if len(results)%20==0:
                 print('Assessed %d/%d wallets' % (len(results),len(candidates)),flush=True)
-    results.sort(key=lambda r:(-r['score'],r['wallet']))
-    chosen=[]
-    for group,limit in [('core',policy['max_core_wallets']),('experimental',policy['max_experimental_wallets'])]:
-        group_rows=[r for r in results if r['classification']==group][:limit]
-        for row in group_rows:
-            row['selected']=True
-            chosen.append(row)
+    chosen = select_traders(results, policy, now)
     report=dict(generated=time.time(),sample_as_of=now,coverage=coverage,policy=policy,
                 candidate_count=len(candidates),assessed_count=len(results),
                 selected_core=sum(r['classification']=='core' for r in chosen),
                 selected_experimental=sum(r['classification']=='experimental' for r in chosen),
                 errors=sum(r['classification']=='data_error' for r in results),traders=results,
                 caveat='Bounded public history, not verified account returns. Trade fills are not independent bets. Concentration is measured per market. High-frequency wallets may have insufficient observed days because history is capped. Open losses, deposits, hedges and off-platform exposures are not assessed, so this is not a risk-adjusted return measure.')
+    publish(report, directory)
+    print('Selected %d core and %d experimental wallets; %d data errors' %
+          (report['selected_core'],report['selected_experimental'],report['errors']),flush=True)
+    return report
+
+
+def select_traders(results, policy, now):
+    for row in results:
+        row['selected'] = False
+    # Activity is a shortlist preference, never a substitute for passing the screens.
+    results.sort(key=lambda r:(-r.get('score',-1000), r['wallet']))
+    chosen=[]
+    for group,limit in [('core',policy['max_core_wallets']),('experimental',policy['max_experimental_wallets'])]:
+        candidates=[r for r in results if r['classification']==group and r.get('last_trade') is not None
+                    and 0 <= now-r['last_trade'] <= policy['max_hours_since_trade']*3600]
+        candidates.sort(key=lambda r:(now-r['last_trade'] > 3600, -r['score'], -r['last_trade'], r['wallet']))
+        for row in candidates[:limit]:
+            row['selected']=True
+            chosen.append(row)
+    return chosen
+
+
+def publish(report, directory):
+    directory=Path(directory)
+    directory.mkdir(parents=True,exist_ok=True)
+    results,policy=report['traders'],report['policy']
+    chosen=[r for r in results if r['selected']]
     atomic_write(directory/'trader-screening.json',json.dumps(report,indent=2)+'\n')
     fields=['name','wallet','classification','selected','transactions','trade_fills','active_days','closed_markets',
             'sampled_realized_pnl','profit_ex_largest_winner','largest_winner_share','profit_factor',
@@ -187,9 +208,6 @@ def discover(fetch, policy, directory, now=None):
                        max_cost=policy['experimental_max_cost'] if r['classification']=='experimental' else 2)
                        for r in chosen})
     atomic_write(directory/'screened-watchlist.json',json.dumps(watchlist,indent=2)+'\n')
-    print('Selected %d core and %d experimental wallets; %d data errors' %
-          (report['selected_core'],report['selected_experimental'],report['errors']),flush=True)
-    return report
 
 
 def validate_policy(policy):

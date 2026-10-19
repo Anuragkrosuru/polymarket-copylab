@@ -143,6 +143,17 @@ class ScreeningTests(unittest.TestCase):
         self.assertAlmostEqual(2,ledger.spend())
         ledger.db.close()
 
+    def test_recent_activity_prioritizes_qualified_wallets_only(self):
+        from copylab.screening import select_traders
+        import copy
+        base=self.evaluate()
+        idle=dict(base,wallet='idle',last_trade=self.now-7200,score=100)
+        active=dict(base,wallet='active',last_trade=self.now-60,score=1)
+        rejected=dict(base,wallet='rejected',classification='observe',last_trade=self.now,score=1000)
+        stale=dict(base,wallet='stale',last_trade=self.now-90000,score=200)
+        chosen=select_traders([idle,active,rejected,stale],dict(self.policy,max_core_wallets=1),self.now)
+        self.assertEqual(['active'],[row['wallet'] for row in chosen])
+
     def test_policy_requires_bounded_experiment_budget(self):
         validate_policy(self.policy)
         with self.assertRaises(ValueError):

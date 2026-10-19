@@ -1,5 +1,10 @@
 {
-  "periods": ["DAY", "WEEK", "MONTH", "ALL"],
+  "periods": [
+    "DAY",
+    "WEEK",
+    "MONTH",
+    "ALL"
+  ],
   "top_per_period": 100,
   "lookback_days": 30,
   "trade_pages": 3,
@@ -10,7 +15,7 @@
   "max_largest_win_share": 0.5,
   "min_profit_factor": 1.2,
   "max_hours_since_trade": 24,
-  "max_core_wallets": 20,
+  "max_core_wallets": 40,
   "max_experimental_wallets": 2,
   "experimental_min_transactions": 10,
   "experimental_min_closed_markets": 3,
