@@ -1,0 +1,161 @@
+{
+  "label": "SYNTHETIC ONLY: invented quotes, not backtest/live returns. Each scenario starts at $40.",
+  "scenarios": [
+    {
+      "name": "lag_then_favorable",
+      "initial_cash": 40,
+      "cash": 40.07906,
+      "lifetime_spend": 2.109,
+      "realized_pnl": 0.07906000000000013,
+      "equity": 40.07906,
+      "total_pnl": 0.07905999999999835,
+      "trades": [
+        {
+          "id": 1,
+          "condition": "synthetic",
+          "opened": 23.0,
+          "market": {
+            "condition": "synthetic",
+            "title": "INVENTED BTC 15m interval",
+            "start": 0,
+            "end": 900,
+            "tokens": [
+              "up",
+              "down"
+            ],
+            "fee_rate": 0.07,
+            "minimum": 5
+          },
+          "direction": 0,
+          "shares": 5.0,
+          "cost": 2.109,
+          "closed": 33.0,
+          "proceeds": 2.18806,
+          "exit_reason": "ten-second exit"
+        }
+      ],
+      "decisions": [
+        "collecting ten-second signal history",
+        "collecting ten-second signal history",
+        "collecting ten-second signal history",
+        "collecting ten-second signal history",
+        "collecting ten-second signal history",
+        "collecting ten-second signal history",
+        "collecting ten-second signal history",
+        "collecting ten-second signal history",
+        "BTC move below three basis points",
+        "BTC move below three basis points",
+        "signal queued; no fill yet",
+        "PAPER BUY",
+        "already traded this interval",
+        "already traded this interval",
+        "already traded this interval",
+        "already traded this interval",
+        "already traded this interval",
+        "already traded this interval",
+        "already traded this interval",
+        "already traded this interval",
+        "already traded this interval",
+        "already traded this interval",
+        "already traded this interval",
+        "already traded this interval"
+      ]
+    },
+    {
+      "name": "lag_then_adverse",
+      "initial_cash": 40,
+      "cash": 39.53637,
+      "lifetime_spend": 2.109,
+      "realized_pnl": -0.46363,
+      "equity": 39.53637,
+      "total_pnl": -0.463630000000002,
+      "trades": [
+        {
+          "id": 1,
+          "condition": "synthetic",
+          "opened": 23.0,
+          "market": {
+            "condition": "synthetic",
+            "title": "INVENTED BTC 15m interval",
+            "start": 0,
+            "end": 900,
+            "tokens": [
+              "up",
+              "down"
+            ],
+            "fee_rate": 0.07,
+            "minimum": 5
+          },
+          "direction": 0,
+          "shares": 5.0,
+          "cost": 2.109,
+          "closed": 33.0,
+          "proceeds": 1.64537,
+          "exit_reason": "ten-second exit"
+        }
+      ],
+      "decisions": [
+        "collecting ten-second signal history",
+        "collecting ten-second signal history",
+        "collecting ten-second signal history",
+        "collecting ten-second signal history",
+        "collecting ten-second signal history",
+        "collecting ten-second signal history",
+        "collecting ten-second signal history",
+        "collecting ten-second signal history",
+        "BTC move below three basis points",
+        "BTC move below three basis points",
+        "signal queued; no fill yet",
+        "PAPER BUY",
+        "already traded this interval",
+        "already traded this interval",
+        "already traded this interval",
+        "already traded this interval",
+        "already traded this interval",
+        "already traded this interval",
+        "already traded this interval",
+        "already traded this interval",
+        "already traded this interval",
+        "already traded this interval",
+        "already traded this interval",
+        "already traded this interval"
+      ]
+    },
+    {
+      "name": "odds_already_repriced",
+      "initial_cash": 40,
+      "cash": 40,
+      "lifetime_spend": 0,
+      "realized_pnl": 0,
+      "equity": 40.0,
+      "total_pnl": 0.0,
+      "trades": [],
+      "decisions": [
+        "collecting ten-second signal history",
+        "collecting ten-second signal history",
+        "collecting ten-second signal history",
+        "collecting ten-second signal history",
+        "collecting ten-second signal history",
+        "collecting ten-second signal history",
+        "collecting ten-second signal history",
+        "collecting ten-second signal history",
+        "BTC move below three basis points",
+        "BTC move below three basis points",
+        "odds already moved or spread/price rejected",
+        "odds already moved or spread/price rejected",
+        "odds already moved or spread/price rejected",
+        "odds already moved or spread/price rejected",
+        "odds already moved or spread/price rejected",
+        "odds already moved or spread/price rejected",
+        "odds already moved or spread/price rejected",
+        "odds already moved or spread/price rejected",
+        "odds already moved or spread/price rejected",
+        "odds already moved or spread/price rejected",
+        "BTC move below three basis points",
+        "BTC move below three basis points",
+        "BTC move below three basis points",
+        "BTC move below three basis points"
+      ]
+    }
+  ]
+}

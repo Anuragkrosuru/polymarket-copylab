@@ -198,3 +198,13 @@ stress case. These are accounting examples, not historical or live returns.
 
 Official references: [positions and tokens](https://docs.polymarket.com/concepts/positions-tokens)
 and [market fees](https://docs.polymarket.com/trading/fees).
+
+### Robinhood lead experiment: BTC 15-minute markets
+
+A third, separate **$40 paper account** tests Robinhood price moves against
+Polymarket's executable quotes. See [setup, strategy and limitations](docs/btc15-experiment.md).
+Run `python3 -m copylab.btc15 --simulate` for invented scenarios or
+`python3 -m copylab.btc15` for the live collector. Connect a read-quotes-only
+Robinhood key using `scripts/connect-robinhood.command`. Until connected, the
+collector records Polymarket quotes and makes **no entries**. No ten-second lead
+has been verified. Reports are in `reports/btc15/`; the account is `btc15.sqlite3`.
