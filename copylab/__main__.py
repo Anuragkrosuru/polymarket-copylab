@@ -11,6 +11,7 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 from copylab.portfolio import initialize, refresh, summary, display, open_lots
 from copylab import runtime
+from copylab.execution import POLICY_VERSION, levels, entry_quality, bid_fingerprint, audit
 
 
 def get(url, **params):
@@ -69,7 +70,7 @@ class Ledger:
         if self.known(trade):
             return 'duplicate'
         key = event_id(trade)
-        trade = dict(trade, copy_group=copy_group)
+        trade = dict(trade, copy_group=copy_group, execution_policy=POLICY_VERSION)
         day = datetime.fromtimestamp(now, timezone.utc).date().isoformat()
         with self.db:
             if not self.db.execute('INSERT OR IGNORE INTO seen VALUES (?)', (key,)).rowcount:
@@ -102,10 +103,10 @@ class Ledger:
                 budget = min(budget, 2-group_spend, 1-wallet_spend)
             if budget < 0.01:
                 return 'risk limit'
-            levels = sorted((float(x['price']), float(x['size'])) for x in book['asks'])
+            ask_levels = levels(book, 'asks')
             # All-in simulated cost includes a conservative 2% fee reserve.
             remaining, shares, gross = budget / 1.02, 0.0, 0.0
-            for price, size in levels:
+            for price, size in ask_levels:
                 if not all(math.isfinite(x) for x in (price, size)) or not 0 < price < 1 or size <= 0:
                     continue
                 if price > source_price + min(0.02, source_price * 0.05) + 1e-12:
@@ -117,7 +118,7 @@ class Ledger:
                 if remaining < 1e-9:
                     break
             if shares == 0:
-                valid_prices = [price for price,size in levels if math.isfinite(price) and math.isfinite(size) and 0 < price < 1 and size > 0]
+                valid_prices = [price for price,size in ask_levels if math.isfinite(price) and math.isfinite(size) and 0 < price < 1 and size > 0]
                 if valid_prices and min(valid_prices) > source_price + min(0.02, source_price*0.05) + 1e-12:
                     return 'entry price exceeds 5 percent or 2 cent limit'
                 return 'no acceptable liquidity'
@@ -126,50 +127,112 @@ class Ledger:
                 raise ValueError('Invalid minimum order size')
             if shares + 1e-9 < minimum:
                 return 'below market minimum order size'
+            rejected, _ = entry_quality(book, shares, gross*1.02)
+            if rejected:
+                return rejected
             self.db.execute('INSERT INTO fills VALUES (?,?,?,?,?,?,?)',
                             (key, day, asset, gross / shares, shares, gross * 1.02,
                              json.dumps(trade, sort_keys=True)))
             self.db.execute('DELETE FROM marks WHERE asset=?', (asset,))
             return 'paper buy: $%.2f, %.4f shares' % (gross * 1.02, shares)
 
-    def sell(self, trade, book, now, key):
-        # A source SELL requests a full exit of this source's copied token holdings.
-        wallet = trade.get('proxyWallet', '').lower()
-        lots = [lot for lot in open_lots(self.db) if lot[1] == str(trade['asset'])
-                and json.loads(lot[4]).get('proxyWallet', '').lower() == wallet]
-        levels = sorted(([float(x['price']), float(x['size'])] for x in book['bids']), reverse=True)
-        if any(not all(math.isfinite(x) for x in level) or not 0 <= level[0] <= 1 or level[1] <= 0
-               for level in levels):
-            raise ValueError('Invalid sell order book')
-        total_shares, total_proceeds = 0.0, 0.0
-        for fill_id, asset, available, cost, source in lots:
-            remaining, proceeds = available, 0.0
-            for level in levels:
-                price, size = level
-                if price < float(trade['price']) - 0.02:
-                    break
-                take = min(size, remaining)
-                proceeds += take * price * .98
-                remaining -= take
-                level[1] -= take
-                if remaining <= 1e-9:
-                    break
-            sold = available - remaining
-            if sold > 1e-9:
-                self.db.execute('INSERT INTO exits VALUES (?,?,?,?,?,?)',
-                                (key, fill_id, sold, cost * sold / available, proceeds, now))
-                total_shares += sold
-                total_proceeds += proceeds
-        if total_shares == 0:
-            return 'no matching holding or acceptable exit liquidity'
-        minimum = float(book.get('min_order_size', 0))
-        if not math.isfinite(minimum) or minimum < 0:
+    def sell(self, trade, book, now, key, retry=False):
+        wallet=trade.get('proxyWallet','').lower()
+        lots=[lot for lot in open_lots(self.db) if lot[1]==str(trade['asset'])
+              and json.loads(lot[4]).get('proxyWallet','').lower()==wallet]
+        if not retry:
+            # A newer source sale replaces older exit requests on these lots.
+            for fill_id,asset,available,cost,source in lots:
+                self.db.execute('DELETE FROM pending_exits WHERE fill_id=?',(fill_id,))
+                self.db.execute('INSERT INTO pending_exits VALUES (?,?,?,?,?,?,?)',
+                    (key,fill_id,available,json.dumps(trade),float(trade['timestamp'])+120,now,''))
+        requests={r[0]:r[1] for r in self.db.execute(
+            'SELECT fill_id,target_shares FROM pending_exits WHERE id=?',(key,))}
+        bids=[list(row) for row in levels(book,'bids')]
+        fingerprint=bid_fingerprint(book)
+        # Validate minimum before touching fills so rejected partial sales remain pending.
+        minimum=float(book.get('min_order_size',0))
+        if not math.isfinite(minimum) or minimum<0:
             raise ValueError('Invalid minimum order size')
-        if total_shares + 1e-9 < minimum:
-            self.db.execute('DELETE FROM exits WHERE id=?', (key,))
-            return 'below market minimum exit size'
-        self.db.execute('DELETE FROM marks WHERE asset=?', (str(trade['asset']),))
-        return 'paper sell: $%.2f proceeds, %.4f shares' % (total_proceeds, total_shares)
+        allocations=[]
+        total_shares,total_proceeds=0.0,0.0
+        for fill_id,asset,available,cost,source in lots:
+            if fill_id not in requests:
+                continue
+            previous=self.db.execute('SELECT shares FROM exits WHERE id=? AND fill_id=?',(key,fill_id)).fetchone()
+            requested=max(0,requests[fill_id]-(previous[0] if previous else 0))
+            remaining=min(available,requested)
+            target=remaining
+            proceeds=0.0
+            for level in bids:
+                price,size=level
+                if price<float(trade['price'])-.02:
+                    break
+                take=min(size,remaining)
+                proceeds+=take*price*.98
+                remaining-=take
+                level[1]-=take
+                if remaining<=1e-9:
+                    break
+            sold=target-remaining
+            if sold>1e-9:
+                allocations.append((fill_id,sold,cost*sold/available,proceeds))
+                total_shares+=sold
+                total_proceeds+=proceeds
+        self.db.execute('UPDATE pending_exits SET attempted=?,fingerprint=? WHERE id=?',(now,fingerprint,key))
+        if total_shares==0:
+            result='no matching holding or acceptable exit liquidity'
+        elif total_shares+1e-9<minimum:
+            result='below market minimum exit size'
+        else:
+            for fill_id,sold,cost,proceeds in allocations:
+                self.db.execute("""INSERT INTO exits VALUES (?,?,?,?,?,?)
+                    ON CONFLICT(id,fill_id) DO UPDATE SET shares=shares+excluded.shares,
+                    cost=cost+excluded.cost,proceeds=proceeds+excluded.proceeds,checked=excluded.checked""",
+                    (key,fill_id,sold,cost,proceeds,now))
+            self.db.execute('DELETE FROM marks WHERE asset=?',(str(trade['asset']),))
+            result='paper sell: $%.2f proceeds, %.4f shares'%(total_proceeds,total_shares)
+        remaining_lots={lot[0] for lot in open_lots(self.db)}
+        for fill_id,target in requests.items():
+            sold=self.db.execute('SELECT shares FROM exits WHERE id=? AND fill_id=?',(key,fill_id)).fetchone()
+            if fill_id not in remaining_lots or (sold and sold[0]+1e-9>=target):
+                self.db.execute('DELETE FROM pending_exits WHERE id=? AND fill_id=?',(key,fill_id))
+        return result
+
+
+def retry_exits(ledger, fetch=None, now=None):
+    fetch=get if fetch is None else fetch
+    live_clock=now is None
+    now=time.time() if now is None else now
+    with ledger.db:
+        ledger.db.execute('DELETE FROM pending_exits WHERE expires<?',(now,))
+        ledger.db.execute('DELETE FROM pending_exits WHERE fill_id IN (SELECT id FROM fills WHERE asset IN (SELECT asset FROM settlements))')
+    requests=ledger.db.execute('SELECT id,MIN(source),MAX(attempted),MIN(fingerprint) FROM pending_exits GROUP BY id').fetchall()
+    for key,raw,attempted,fingerprint in requests:
+        if now-attempted<5:
+            continue
+        trade=json.loads(raw)
+        try:
+            book=fetch('https://clob.polymarket.com/book',token_id=trade['asset'])
+            if str(book.get('asset_id'))!=str(trade['asset']):
+                raise ValueError('Exit book identity mismatch')
+            attempt_time=time.time() if live_clock else now
+            if attempt_time-float(trade['timestamp'])>120:
+                with ledger.db:
+                    ledger.db.execute('DELETE FROM pending_exits WHERE id=?',(key,))
+                continue
+            if bid_fingerprint(book)==fingerprint:
+                # Re-reading unchanged depth must not invent replenished liquidity.
+                with ledger.db:
+                    ledger.db.execute('UPDATE pending_exits SET attempted=? WHERE id=?',(attempt_time,key))
+                continue
+            with ledger.db:
+                ledger.db.execute('BEGIN IMMEDIATE')
+                result=ledger.sell(trade,book,attempt_time,key,retry=True)
+            audit(ledger,trade,book,'exit retry: '+result,attempt_time)
+            print('Exit retry:',result,flush=True)
+        except (OSError,ValueError,KeyError,TypeError) as error:
+            print('Exit retry failed; request remains bounded by expiry:',str(error),flush=True)
 
 
 def scan(ledger, wallet, fetch=None, clock=None, allow_buys=True, max_cost=2, copy_group='manual', prefetched=None):
@@ -201,12 +264,15 @@ def scan(ledger, wallet, fetch=None, clock=None, allow_buys=True, max_cost=2, co
                 if ledger.known(trade):
                     continue
                 book = fetch('https://clob.polymarket.com/book', token_id=trade['asset'])
+                if book.get('market') is not None and book['market'] != trade.get('conditionId'):
+                    raise ValueError('Order book market mismatch')
                 if str(book.get('asset_id')) != str(trade['asset']):
                     raise ValueError('Order book identity mismatch')
                 result = ledger.process(trade, book, clock(), max_cost=max_cost, copy_group=copy_group)
                 with ledger.db:
                     ledger.db.execute('INSERT OR REPLACE INTO decisions VALUES (?,?,?)',
                                       (event_id(trade), clock(), result))
+                audit(ledger,trade,book,result,clock())
                 print(wallet, result, flush=True)
             except (OSError, ValueError, KeyError, TypeError) as error:
                 errors.append(str(error))
@@ -340,6 +406,7 @@ def main():
                 except (OSError, ValueError, KeyError, TypeError) as error:
                     runtime.scan_result(ledger, wallet, error=str(error))
                     print('Wallet scan failed:', str(error), flush=True)
+            retry_exits(ledger)
             refresh(ledger, get)
             with ledger.db:
                 ledger.db.execute('INSERT OR REPLACE INTO polling VALUES (1,?,?,?,?)',

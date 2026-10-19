@@ -20,7 +20,8 @@ class ExecutionTests(unittest.TestCase):
         self.wallet = '0x' + '1'*40
         self.trade = dict(transactionHash='tx', timestamp=self.now, side='BUY',
                           price=.5, size=100, asset='a', conditionId='c', proxyWallet=self.wallet)
-        self.book = dict(asset_id='a', asks=[dict(price=.5, size=100)], bids=[dict(price=.6, size=100)])
+        self.book = dict(asset_id='a', asks=[dict(price=.5, size=100)], bids=[dict(price=.49, size=100)])
+        self.exit_book = dict(self.book, asks=[dict(price=.61,size=100)], bids=[dict(price=.6,size=100)])
 
     def test_market_minimum_prevents_impossible_small_order(self):
         book = dict(self.book, min_order_size='5')
@@ -40,7 +41,7 @@ class ExecutionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.ledger.process(sell, dict(self.book, bids=[dict(price='NaN', size=1)]), self.now)
         self.assertFalse(self.ledger.known(sell))
-        self.assertIn('paper sell', self.ledger.process(sell, self.book, self.now))
+        self.assertIn('paper sell', self.ledger.process(sell, self.exit_book, self.now))
 
     def test_changed_display_metadata_is_not_another_trade(self):
         self.ledger.process(self.trade, self.book, self.now)
@@ -69,20 +70,20 @@ class ExecutionTests(unittest.TestCase):
             ledger = Ledger(path)
             ledger.process(self.trade, self.book, self.now)
             sell = dict(self.trade, transactionHash='sell', side='SELL', price=.6)
-            ledger.process(sell, self.book, self.now)
+            ledger.process(sell, self.exit_book, self.now)
             report = summary(ledger, self.now)
             self.assertEqual([], report['positions'])
             self.assertAlmostEqual((2/1.02)/.5*.6*.98-2, report['sale_pnl'])
             ledger.db.close()
             ledger = Ledger(path)
-            self.assertEqual('duplicate', ledger.process(sell, self.book, self.now))
+            self.assertEqual('duplicate', ledger.process(sell, self.exit_book, self.now))
             self.assertAlmostEqual(report['cash'], summary(ledger, self.now)['cash'])
             ledger.db.close()
 
     def test_source_sell_does_not_chase_a_low_bid(self):
         self.ledger.process(self.trade, self.book, self.now)
         sell = dict(self.trade, transactionHash='sell', side='SELL', price=.9)
-        self.assertIn('no matching holding or acceptable', self.ledger.process(sell, self.book, self.now))
+        self.assertIn('no matching holding or acceptable', self.ledger.process(sell, self.exit_book, self.now))
         self.assertEqual(0, summary(self.ledger, self.now)['sales'])
 
     def test_one_bad_trade_does_not_block_other_trades(self):

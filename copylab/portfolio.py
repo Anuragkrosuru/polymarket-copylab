@@ -145,6 +145,7 @@ def summary(ledger, now=None):
     return dict(mode='SIMULATION', cash=cash, initial_cash=40, open_cost=open_cost,
                 open_value=value if not missing else None, realized_pnl=payout-settled_cost+sale_proceeds-sale_cost,
                 sale_pnl=sale_proceeds-sale_cost, settlement_pnl=payout-settled_cost,
+                pending_exit_requests=ledger.db.execute('SELECT COUNT(DISTINCT id) FROM pending_exits WHERE expires>=?',(now,)).fetchone()[0],
                 sales=ledger.db.execute('SELECT COUNT(DISTINCT id) FROM exits').fetchone()[0],
                 unrealized_pnl=value-open_cost if not missing else None,
                 equity=cash+value if not missing else None,
@@ -171,6 +172,7 @@ def display(report):
            report['fills'], report['settled_positions']), flush=True)
     print('Copied sales: %d | Sale P/L: %s | Settlement P/L: %s' %
           (report['sales'], dollars(report['sale_pnl']), dollars(report['settlement_pnl'])), flush=True)
+    print('Pending copied exit requests: %d' % report.get('pending_exit_requests',0), flush=True)
     for scan in report['scans']:
         age = max(0, time.time() - scan['checked'])
         state = scan['error'] or ('OK' if age <= 120 else 'STALE; watcher may be stopped')

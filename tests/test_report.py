@@ -14,9 +14,9 @@ class ReportTests(unittest.TestCase):
         now = 1700000000
         trade = dict(transactionHash='buy-tx', proxyWallet='wallet', timestamp=now,
                      side='BUY', price=.5, size=100, asset='a', conditionId='c', title='Test market', outcome='Yes')
-        book = dict(asks=[dict(price=.5,size=100)], bids=[dict(price=.6,size=1)])
+        book = dict(asks=[dict(price=.5,size=100)], bids=[dict(price=.49,size=100)])
         ledger.process(trade,book,now)
-        ledger.process(dict(trade, transactionHash='sell-tx',side='SELL',price=.6,timestamp=now+1),book,now+1)
+        ledger.process(dict(trade, transactionHash='sell-tx',side='SELL',price=.6,timestamp=now+1),dict(book,bids=[dict(price=.6,size=1)]),now+1)
         market = dict(condition_id='c',closed=True,tokens=[dict(token_id='a',winner=True),dict(token_id='b',winner=False)])
         refresh(ledger,lambda *a,**k:market,now+2)
         report=collect(ledger,now+2)

@@ -13,7 +13,7 @@ class PortfolioTests(unittest.TestCase):
         self.now = 1700000000
         trade = dict(timestamp=self.now, side='BUY', price=.5, asset='a',
                      conditionId='condition', title='Example', outcome='Yes')
-        self.ledger.process(trade, {'asks': [{'price': '.5', 'size': '100'}]}, self.now)
+        self.ledger.process(trade, {'asks': [{'price': '.5', 'size': '100'}], 'bids':[dict(price=.49,size=100)]}, self.now)
         self.market = dict(condition_id='condition', closed=False, tokens=[
             dict(token_id='a', winner=False), dict(token_id='b', winner=False)])
         self.book = dict(asset_id='a', bids=[dict(price='.6', size='100')])

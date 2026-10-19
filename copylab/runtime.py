@@ -35,6 +35,10 @@ def watcher_lock(database):
 
 def initialize(db):
     db.executescript('''
+    CREATE TABLE IF NOT EXISTS pending_exits(id TEXT, fill_id TEXT, target_shares REAL,
+        source TEXT, expires REAL, attempted REAL, fingerprint TEXT, PRIMARY KEY(id,fill_id));
+    CREATE TABLE IF NOT EXISTS execution_attempts(attempt INTEGER PRIMARY KEY, id TEXT, checked REAL, context TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS execution_audits(id TEXT PRIMARY KEY, checked REAL, context TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS polling(id INTEGER PRIMARY KEY CHECK(id=1), checked REAL, target_seconds REAL, observed_seconds REAL, work_seconds REAL);
     CREATE TABLE IF NOT EXISTS monitor(id INTEGER PRIMARY KEY CHECK(id=1), checked REAL, targets TEXT);
     CREATE TABLE IF NOT EXISTS scans(wallet TEXT PRIMARY KEY, checked REAL,

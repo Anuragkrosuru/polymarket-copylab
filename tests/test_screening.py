@@ -67,7 +67,7 @@ class ScreeningTests(unittest.TestCase):
     def test_experimental_budget_cannot_increase_default_cap(self):
         ledger=Ledger(':memory:')
         trade=dict(self.trades[0],transactionHash='copy',size=100,conditionId='c')
-        ledger.process(trade,{'asks':[dict(price=.5,size=100)]},self.now,max_cost=1)
+        ledger.process(trade,{'asks':[dict(price=.5,size=100)],'bids':[dict(price=.49,size=100)]},self.now,max_cost=1)
         self.assertAlmostEqual(1,ledger.spend())
         ledger.db.close()
 
@@ -83,7 +83,7 @@ class ScreeningTests(unittest.TestCase):
             self.assertEqual(1,targets[self.wallet]['max_cost'])
             self.assertEqual({},watch_targets(ledger,[],path,self.now+7201))
             trade=dict(self.trades[0],timestamp=self.now,transactionHash='holding',size=100,conditionId='c')
-            ledger.process(trade,{'asks':[dict(price=.5,size=100)]},self.now)
+            ledger.process(trade,{'asks':[dict(price=.5,size=100)],'bids':[dict(price=.49,size=100)]},self.now)
             path.write_text(json.dumps(dict(wallets=[],generated=self.now)))
             targets=watch_targets(ledger,[],path,self.now)
             self.assertFalse(targets[self.wallet]['allow_buys'])
@@ -130,7 +130,7 @@ class ScreeningTests(unittest.TestCase):
         for i in range(4):
             trade=dict(self.trades[0],timestamp=self.now,transactionHash='copy-'+str(i),
                        size=100,conditionId='c'+str(i),asset=str(i),proxyWallet='0x'+str(i+1)*40)
-            ledger.process(trade,{'asks':[dict(price=.5,size=100)]},self.now,max_cost=1,copy_group='experimental')
+            ledger.process(trade,{'asks':[dict(price=.5,size=100)],'bids':[dict(price=.49,size=100)]},self.now,max_cost=1,copy_group='experimental')
         self.assertAlmostEqual(2,ledger.spend())
         ledger.db.close()
 
@@ -139,7 +139,7 @@ class ScreeningTests(unittest.TestCase):
         for i in range(2):
             trade=dict(self.trades[0],timestamp=self.now,transactionHash='market-'+str(i),
                        size=100,conditionId='same-market',asset=str(i),proxyWallet='0x'+str(i+1)*40)
-            ledger.process(trade,{'asks':[dict(price=.5,size=100)]},self.now)
+            ledger.process(trade,{'asks':[dict(price=.5,size=100)],'bids':[dict(price=.49,size=100)]},self.now)
         self.assertAlmostEqual(2,ledger.spend())
         ledger.db.close()
 
