@@ -21,7 +21,7 @@ class RiskTests(unittest.TestCase):
         self.assertAlmostEqual(8, self.ledger.spend())
 
     def test_stale_and_chasing(self):
-        self.assertEqual('old trade or non-buy', self.ledger.process(self.trade, self.book, self.now+121))
+        self.assertEqual('old trade or unsupported side', self.ledger.process(self.trade, self.book, self.now+121))
         self.assertEqual('no acceptable liquidity', self.ledger.process(dict(self.trade, asset='b'), {'asks':[{'price':'.8','size':'100'}]}, self.now))
         self.assertEqual(0, self.ledger.spend())
 

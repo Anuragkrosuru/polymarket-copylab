@@ -20,12 +20,29 @@ def initialize(db):
     CREATE TABLE IF NOT EXISTS health (
         id INTEGER PRIMARY KEY CHECK (id=1), checked REAL NOT NULL);
     ''')
+    columns = {row[1] for row in db.execute('PRAGMA table_info(marks)')}
+    for column in ('shares', 'cost'):
+        if column not in columns:
+            db.execute('ALTER TABLE marks ADD COLUMN ' + column + ' REAL')
+    db.commit()
+
+
+def open_lots(db):
+    return db.execute("""SELECT f.id, f.asset, f.shares-COALESCE(e.shares,0),
+        f.cost-COALESCE(e.cost,0), f.source FROM fills f
+        LEFT JOIN (SELECT fill_id, SUM(shares) shares, SUM(cost) cost
+                   FROM exits GROUP BY fill_id) e ON e.fill_id=f.id
+        WHERE f.asset NOT IN (SELECT asset FROM settlements)
+        AND f.shares-COALESCE(e.shares,0)>0.000000001 ORDER BY f.rowid""").fetchall()
 
 
 def open_positions(db):
-    return db.execute('''SELECT asset, SUM(shares), SUM(cost), MIN(source)
-        FROM fills WHERE asset NOT IN (SELECT asset FROM settlements)
-        GROUP BY asset''').fetchall()
+    grouped = {}
+    for _, asset, shares, cost, source in open_lots(db):
+        position = grouped.setdefault(asset, [asset, 0.0, 0.0, source])
+        position[1] += shares
+        position[2] += cost
+    return list(grouped.values())
 
 
 def settlement_price(market, asset):
@@ -75,8 +92,14 @@ def refresh(ledger, fetch, now=None):
             payout_price = settlement_price(market, asset)
             if payout_price is not None:
                 with ledger.db:
-                    ledger.db.execute('INSERT OR IGNORE INTO settlements VALUES (?,?,?,?,?)',
-                                      (asset, shares, cost, shares * payout_price, now))
+                    ledger.db.execute('BEGIN IMMEDIATE')
+                    # Re-read remaining lots after acquiring the writer lock; a concurrent
+                    # watcher may have sold part of this holding during the API call.
+                    current = next((p for p in open_positions(ledger.db) if p[0] == asset), None)
+                    if current is not None:
+                        _, current_shares, current_cost, _ = current
+                        ledger.db.execute('INSERT OR IGNORE INTO settlements VALUES (?,?,?,?,?)',
+                                          (asset, current_shares, current_cost, current_shares * payout_price, now))
                 continue
             book = fetch('https://clob.polymarket.com/book', token_id=asset)
             if str(book.get('asset_id')) != asset:
@@ -85,8 +108,8 @@ def refresh(ledger, fetch, now=None):
         except (OSError, ValueError, KeyError, TypeError) as error:
             value, note = None, 'valuation unavailable: ' + str(error)
         with ledger.db:
-            ledger.db.execute('INSERT OR REPLACE INTO marks VALUES (?,?,?,?)',
-                              (asset, value, now, note))
+            ledger.db.execute('INSERT OR REPLACE INTO marks(asset,value,checked,note,shares,cost) VALUES (?,?,?,?,?,?)',
+                              (asset, value, now, note, shares, cost))
     with ledger.db:
         ledger.db.execute('INSERT OR REPLACE INTO health VALUES (1,?)', (now,))
 
@@ -95,11 +118,15 @@ def summary(ledger, now=None):
     now = time.time() if now is None else now
     payout, settled_cost = ledger.db.execute(
         'SELECT COALESCE(SUM(payout),0), COALESCE(SUM(cost),0) FROM settlements').fetchone()
-    cash = 40 - ledger.spend() + payout
+    sale_proceeds, sale_cost = ledger.db.execute(
+        'SELECT COALESCE(SUM(proceeds),0), COALESCE(SUM(cost),0) FROM exits').fetchone()
+    cash = 40 - ledger.spend() + payout + sale_proceeds
     positions, missing, value = [], 0, 0.0
     for asset, shares, cost, source in open_positions(ledger.db):
-        mark = ledger.db.execute('SELECT value, checked, note FROM marks WHERE asset=?', (asset,)).fetchone()
-        usable = mark is not None and mark[0] is not None and 0 <= now - mark[1] <= MAX_MARK_AGE
+        mark = ledger.db.execute('SELECT value, checked, note, shares, cost FROM marks WHERE asset=?', (asset,)).fetchone()
+        usable = (mark is not None and mark[0] is not None and
+                  0 <= now - mark[1] <= MAX_MARK_AGE and mark[3] is not None and mark[4] is not None and
+                  abs(mark[3]-shares) < 1e-8 and abs(mark[4]-cost) < 1e-8)
         if usable:
             value += mark[0]
         else:
@@ -113,14 +140,20 @@ def summary(ledger, now=None):
     open_cost = sum(p['cost'] for p in positions)
     health = ledger.db.execute('SELECT checked FROM health WHERE id=1').fetchone()
     return dict(mode='SIMULATION', cash=cash, initial_cash=40, open_cost=open_cost,
-                open_value=value if not missing else None, realized_pnl=payout-settled_cost,
+                open_value=value if not missing else None, realized_pnl=payout-settled_cost+sale_proceeds-sale_cost,
+                sale_pnl=sale_proceeds-sale_cost, settlement_pnl=payout-settled_cost,
+                sales=ledger.db.execute('SELECT COUNT(DISTINCT id) FROM exits').fetchone()[0],
                 unrealized_pnl=value-open_cost if not missing else None,
                 equity=cash+value if not missing else None,
                 total_pnl=cash+value-40 if not missing else None,
                 fills=ledger.db.execute('SELECT COUNT(*) FROM fills').fetchone()[0],
                 settled_positions=ledger.db.execute('SELECT COUNT(*) FROM settlements').fetchone()[0],
                 unpriced_positions=missing, positions=positions,
-                last_refresh=health[0] if health else None)
+                last_refresh=health[0] if health else None,
+                decision_counts={r[0]: r[1] for r in ledger.db.execute(
+                    'SELECT result, COUNT(*) FROM decisions GROUP BY result')},
+                scans=[dict(wallet=r[0], checked=r[1], newest=r[2], records=r[3], error=r[4])
+                       for r in ledger.db.execute('SELECT * FROM scans ORDER BY wallet')])
 
 
 def display(report):
@@ -128,9 +161,17 @@ def display(report):
         return 'UNKNOWN' if value is None else '$%.2f' % value
     print('SIMULATION | Cash: %s | Equity: %s | Total P/L: %s' %
           (dollars(report['cash']), dollars(report['equity']), dollars(report['total_pnl'])), flush=True)
-    print('Settled P/L: %s | Open P/L (estimate): %s | Fills: %d | Settled positions: %d' %
+    print('Realized P/L: %s | Open P/L (estimate): %s | Buys: %d | Settled positions: %d' %
           (dollars(report['realized_pnl']), dollars(report['unrealized_pnl']),
            report['fills'], report['settled_positions']), flush=True)
+    print('Copied sales: %d | Sale P/L: %s | Settlement P/L: %s' %
+          (report['sales'], dollars(report['sale_pnl']), dollars(report['settlement_pnl'])), flush=True)
+    for scan in report['scans']:
+        age = max(0, time.time() - scan['checked'])
+        state = scan['error'] or ('OK' if age <= 120 else 'STALE; watcher may be stopped')
+        if scan['newest'] is not None:
+            state += '; newest source trade %.0fs old' % max(0, time.time()-scan['newest'])
+        print('Watcher %s | Last scan %.0fs ago | %s' % (scan['wallet'], age, state), flush=True)
     for position in report['positions']:
         print('  %s [%s] | Cost: %s | Bid value: %s | P/L: %s | %s' %
               (position['title'], position['outcome'], dollars(position['cost']),

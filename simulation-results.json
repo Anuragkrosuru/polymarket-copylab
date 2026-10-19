@@ -1,0 +1,562 @@
+{
+  "kind": "SYNTHETIC_INTEGRATION_TEST",
+  "generated": "2026-10-19T20:02:18.956148+00:00",
+  "disclaimer": "Invented prices and outcomes. Tests software behavior; does not measure or predict trading profitability.",
+  "assumptions": {
+    "initial_cash": 40,
+    "buy_cost": 2,
+    "daily_spend_cap": 8,
+    "entry_reserve": 0.02,
+    "exit_reserve": 0.02,
+    "source_entry_price": 0.5,
+    "policy": "Source SELL requests full exit of matching copied holdings."
+  },
+  "scenarios": [
+    {
+      "name": "Favorable constructed outcomes",
+      "synthetic": true,
+      "final_equity": 44.64705882352941,
+      "total_pnl": 4.647058823529413,
+      "snapshots": [
+        {
+          "stage": "4 buys; fifth blocked by daily spending cap",
+          "timestamp": 1792425601,
+          "mode": "SIMULATION",
+          "cash": 32.0,
+          "initial_cash": 40,
+          "open_cost": 8.0,
+          "open_value": 7.532549019607842,
+          "realized_pnl": 0,
+          "sale_pnl": 0,
+          "settlement_pnl": 0,
+          "sales": 0,
+          "unrealized_pnl": -0.46745098039215804,
+          "equity": 39.53254901960784,
+          "total_pnl": -0.46745098039215804,
+          "fills": 4,
+          "settled_positions": 0,
+          "unpriced_positions": 0,
+          "positions": [
+            {
+              "asset": "0",
+              "title": "Synthetic market 1",
+              "outcome": "Yes",
+              "shares": 3.9215686274509802,
+              "cost": 2.0,
+              "value": 1.8831372549019605,
+              "pnl": -0.11686274509803951,
+              "checked": 1792425601.0,
+              "note": "bid depth estimate"
+            },
+            {
+              "asset": "1",
+              "title": "Synthetic market 2",
+              "outcome": "Yes",
+              "shares": 3.9215686274509802,
+              "cost": 2.0,
+              "value": 1.8831372549019605,
+              "pnl": -0.11686274509803951,
+              "checked": 1792425601.0,
+              "note": "bid depth estimate"
+            },
+            {
+              "asset": "2",
+              "title": "Synthetic market 3",
+              "outcome": "Yes",
+              "shares": 3.9215686274509802,
+              "cost": 2.0,
+              "value": 1.8831372549019605,
+              "pnl": -0.11686274509803951,
+              "checked": 1792425601.0,
+              "note": "bid depth estimate"
+            },
+            {
+              "asset": "3",
+              "title": "Synthetic market 4",
+              "outcome": "Yes",
+              "shares": 3.9215686274509802,
+              "cost": 2.0,
+              "value": 1.8831372549019605,
+              "pnl": -0.11686274509803951,
+              "checked": 1792425601.0,
+              "note": "bid depth estimate"
+            }
+          ],
+          "last_refresh": 1792425601.0,
+          "decision_counts": {
+            "paper buy: $2.00, 3.9216 shares": 4,
+            "risk limit": 1
+          },
+          "scans": [
+            {
+              "wallet": "0x1111111111111111111111111111111111111111",
+              "checked": 1792425601.0,
+              "newest": 1792425601.0,
+              "records": 5,
+              "error": null
+            }
+          ]
+        },
+        {
+          "stage": "source sells copied",
+          "timestamp": 1792425661,
+          "mode": "SIMULATION",
+          "cash": 36.80392156862745,
+          "initial_cash": 40,
+          "open_cost": 4.0,
+          "open_value": 3.766274509803921,
+          "realized_pnl": 0.8039215686274499,
+          "sale_pnl": 0.8039215686274499,
+          "settlement_pnl": 0,
+          "sales": 2,
+          "unrealized_pnl": -0.23372549019607902,
+          "equity": 40.57019607843137,
+          "total_pnl": 0.5701960784313727,
+          "fills": 4,
+          "settled_positions": 0,
+          "unpriced_positions": 0,
+          "positions": [
+            {
+              "asset": "2",
+              "title": "Synthetic market 3",
+              "outcome": "Yes",
+              "shares": 3.9215686274509802,
+              "cost": 2.0,
+              "value": 1.8831372549019605,
+              "pnl": -0.11686274509803951,
+              "checked": 1792425661.0,
+              "note": "bid depth estimate"
+            },
+            {
+              "asset": "3",
+              "title": "Synthetic market 4",
+              "outcome": "Yes",
+              "shares": 3.9215686274509802,
+              "cost": 2.0,
+              "value": 1.8831372549019605,
+              "pnl": -0.11686274509803951,
+              "checked": 1792425661.0,
+              "note": "bid depth estimate"
+            }
+          ],
+          "last_refresh": 1792425661.0,
+          "decision_counts": {
+            "paper buy: $2.00, 3.9216 shares": 4,
+            "paper sell: $2.31 proceeds, 3.9216 shares": 1,
+            "paper sell: $2.50 proceeds, 3.9216 shares": 1,
+            "risk limit": 1
+          },
+          "scans": [
+            {
+              "wallet": "0x1111111111111111111111111111111111111111",
+              "checked": 1792425661.0,
+              "newest": 1792425661.0,
+              "records": 2,
+              "error": null
+            }
+          ]
+        },
+        {
+          "stage": "remaining positions settled",
+          "timestamp": 1792429261,
+          "mode": "SIMULATION",
+          "cash": 44.64705882352941,
+          "initial_cash": 40,
+          "open_cost": 0,
+          "open_value": 0.0,
+          "realized_pnl": 4.6470588235294095,
+          "sale_pnl": 0.8039215686274499,
+          "settlement_pnl": 3.8431372549019605,
+          "sales": 2,
+          "unrealized_pnl": 0.0,
+          "equity": 44.64705882352941,
+          "total_pnl": 4.647058823529413,
+          "fills": 4,
+          "settled_positions": 2,
+          "unpriced_positions": 0,
+          "positions": [],
+          "last_refresh": 1792429261.0,
+          "decision_counts": {
+            "paper buy: $2.00, 3.9216 shares": 4,
+            "paper sell: $2.31 proceeds, 3.9216 shares": 1,
+            "paper sell: $2.50 proceeds, 3.9216 shares": 1,
+            "risk limit": 1
+          },
+          "scans": [
+            {
+              "wallet": "0x1111111111111111111111111111111111111111",
+              "checked": 1792425661.0,
+              "newest": 1792425661.0,
+              "records": 2,
+              "error": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Mixed constructed outcomes",
+      "synthetic": true,
+      "final_equity": 39.76470588235294,
+      "total_pnl": -0.235294117647058,
+      "snapshots": [
+        {
+          "stage": "4 buys; fifth blocked by daily spending cap",
+          "timestamp": 1792425601,
+          "mode": "SIMULATION",
+          "cash": 32.0,
+          "initial_cash": 40,
+          "open_cost": 8.0,
+          "open_value": 7.532549019607842,
+          "realized_pnl": 0,
+          "sale_pnl": 0,
+          "settlement_pnl": 0,
+          "sales": 0,
+          "unrealized_pnl": -0.46745098039215804,
+          "equity": 39.53254901960784,
+          "total_pnl": -0.46745098039215804,
+          "fills": 4,
+          "settled_positions": 0,
+          "unpriced_positions": 0,
+          "positions": [
+            {
+              "asset": "0",
+              "title": "Synthetic market 1",
+              "outcome": "Yes",
+              "shares": 3.9215686274509802,
+              "cost": 2.0,
+              "value": 1.8831372549019605,
+              "pnl": -0.11686274509803951,
+              "checked": 1792425601.0,
+              "note": "bid depth estimate"
+            },
+            {
+              "asset": "1",
+              "title": "Synthetic market 2",
+              "outcome": "Yes",
+              "shares": 3.9215686274509802,
+              "cost": 2.0,
+              "value": 1.8831372549019605,
+              "pnl": -0.11686274509803951,
+              "checked": 1792425601.0,
+              "note": "bid depth estimate"
+            },
+            {
+              "asset": "2",
+              "title": "Synthetic market 3",
+              "outcome": "Yes",
+              "shares": 3.9215686274509802,
+              "cost": 2.0,
+              "value": 1.8831372549019605,
+              "pnl": -0.11686274509803951,
+              "checked": 1792425601.0,
+              "note": "bid depth estimate"
+            },
+            {
+              "asset": "3",
+              "title": "Synthetic market 4",
+              "outcome": "Yes",
+              "shares": 3.9215686274509802,
+              "cost": 2.0,
+              "value": 1.8831372549019605,
+              "pnl": -0.11686274509803951,
+              "checked": 1792425601.0,
+              "note": "bid depth estimate"
+            }
+          ],
+          "last_refresh": 1792425601.0,
+          "decision_counts": {
+            "paper buy: $2.00, 3.9216 shares": 4,
+            "risk limit": 1
+          },
+          "scans": [
+            {
+              "wallet": "0x1111111111111111111111111111111111111111",
+              "checked": 1792425601.0,
+              "newest": 1792425601.0,
+              "records": 5,
+              "error": null
+            }
+          ]
+        },
+        {
+          "stage": "source sells copied",
+          "timestamp": 1792425661,
+          "mode": "SIMULATION",
+          "cash": 35.84313725490196,
+          "initial_cash": 40,
+          "open_cost": 4.0,
+          "open_value": 3.766274509803921,
+          "realized_pnl": -0.15686274509803955,
+          "sale_pnl": -0.15686274509803955,
+          "settlement_pnl": 0,
+          "sales": 2,
+          "unrealized_pnl": -0.23372549019607902,
+          "equity": 39.60941176470588,
+          "total_pnl": -0.3905882352941177,
+          "fills": 4,
+          "settled_positions": 0,
+          "unpriced_positions": 0,
+          "positions": [
+            {
+              "asset": "2",
+              "title": "Synthetic market 3",
+              "outcome": "Yes",
+              "shares": 3.9215686274509802,
+              "cost": 2.0,
+              "value": 1.8831372549019605,
+              "pnl": -0.11686274509803951,
+              "checked": 1792425661.0,
+              "note": "bid depth estimate"
+            },
+            {
+              "asset": "3",
+              "title": "Synthetic market 4",
+              "outcome": "Yes",
+              "shares": 3.9215686274509802,
+              "cost": 2.0,
+              "value": 1.8831372549019605,
+              "pnl": -0.11686274509803951,
+              "checked": 1792425661.0,
+              "note": "bid depth estimate"
+            }
+          ],
+          "last_refresh": 1792425661.0,
+          "decision_counts": {
+            "paper buy: $2.00, 3.9216 shares": 4,
+            "paper sell: $1.88 proceeds, 3.9216 shares": 1,
+            "paper sell: $1.96 proceeds, 3.9216 shares": 1,
+            "risk limit": 1
+          },
+          "scans": [
+            {
+              "wallet": "0x1111111111111111111111111111111111111111",
+              "checked": 1792425661.0,
+              "newest": 1792425661.0,
+              "records": 2,
+              "error": null
+            }
+          ]
+        },
+        {
+          "stage": "remaining positions settled",
+          "timestamp": 1792429261,
+          "mode": "SIMULATION",
+          "cash": 39.76470588235294,
+          "initial_cash": 40,
+          "open_cost": 0,
+          "open_value": 0.0,
+          "realized_pnl": -0.23529411764705932,
+          "sale_pnl": -0.15686274509803955,
+          "settlement_pnl": -0.07843137254901977,
+          "sales": 2,
+          "unrealized_pnl": 0.0,
+          "equity": 39.76470588235294,
+          "total_pnl": -0.235294117647058,
+          "fills": 4,
+          "settled_positions": 2,
+          "unpriced_positions": 0,
+          "positions": [],
+          "last_refresh": 1792429261.0,
+          "decision_counts": {
+            "paper buy: $2.00, 3.9216 shares": 4,
+            "paper sell: $1.88 proceeds, 3.9216 shares": 1,
+            "paper sell: $1.96 proceeds, 3.9216 shares": 1,
+            "risk limit": 1
+          },
+          "scans": [
+            {
+              "wallet": "0x1111111111111111111111111111111111111111",
+              "checked": 1792425661.0,
+              "newest": 1792425661.0,
+              "records": 2,
+              "error": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Adverse constructed outcomes",
+      "synthetic": true,
+      "final_equity": 34.113725490196074,
+      "total_pnl": -5.8862745098039255,
+      "snapshots": [
+        {
+          "stage": "4 buys; fifth blocked by daily spending cap",
+          "timestamp": 1792425601,
+          "mode": "SIMULATION",
+          "cash": 32.0,
+          "initial_cash": 40,
+          "open_cost": 8.0,
+          "open_value": 7.532549019607842,
+          "realized_pnl": 0,
+          "sale_pnl": 0,
+          "settlement_pnl": 0,
+          "sales": 0,
+          "unrealized_pnl": -0.46745098039215804,
+          "equity": 39.53254901960784,
+          "total_pnl": -0.46745098039215804,
+          "fills": 4,
+          "settled_positions": 0,
+          "unpriced_positions": 0,
+          "positions": [
+            {
+              "asset": "0",
+              "title": "Synthetic market 1",
+              "outcome": "Yes",
+              "shares": 3.9215686274509802,
+              "cost": 2.0,
+              "value": 1.8831372549019605,
+              "pnl": -0.11686274509803951,
+              "checked": 1792425601.0,
+              "note": "bid depth estimate"
+            },
+            {
+              "asset": "1",
+              "title": "Synthetic market 2",
+              "outcome": "Yes",
+              "shares": 3.9215686274509802,
+              "cost": 2.0,
+              "value": 1.8831372549019605,
+              "pnl": -0.11686274509803951,
+              "checked": 1792425601.0,
+              "note": "bid depth estimate"
+            },
+            {
+              "asset": "2",
+              "title": "Synthetic market 3",
+              "outcome": "Yes",
+              "shares": 3.9215686274509802,
+              "cost": 2.0,
+              "value": 1.8831372549019605,
+              "pnl": -0.11686274509803951,
+              "checked": 1792425601.0,
+              "note": "bid depth estimate"
+            },
+            {
+              "asset": "3",
+              "title": "Synthetic market 4",
+              "outcome": "Yes",
+              "shares": 3.9215686274509802,
+              "cost": 2.0,
+              "value": 1.8831372549019605,
+              "pnl": -0.11686274509803951,
+              "checked": 1792425601.0,
+              "note": "bid depth estimate"
+            }
+          ],
+          "last_refresh": 1792425601.0,
+          "decision_counts": {
+            "paper buy: $2.00, 3.9216 shares": 4,
+            "risk limit": 1
+          },
+          "scans": [
+            {
+              "wallet": "0x1111111111111111111111111111111111111111",
+              "checked": 1792425601.0,
+              "newest": 1792425601.0,
+              "records": 5,
+              "error": null
+            }
+          ]
+        },
+        {
+          "stage": "source sells copied",
+          "timestamp": 1792425661,
+          "mode": "SIMULATION",
+          "cash": 34.113725490196074,
+          "initial_cash": 40,
+          "open_cost": 4.0,
+          "open_value": 3.766274509803921,
+          "realized_pnl": -1.886274509803922,
+          "sale_pnl": -1.886274509803922,
+          "settlement_pnl": 0,
+          "sales": 2,
+          "unrealized_pnl": -0.23372549019607902,
+          "equity": 37.879999999999995,
+          "total_pnl": -2.1200000000000045,
+          "fills": 4,
+          "settled_positions": 0,
+          "unpriced_positions": 0,
+          "positions": [
+            {
+              "asset": "2",
+              "title": "Synthetic market 3",
+              "outcome": "Yes",
+              "shares": 3.9215686274509802,
+              "cost": 2.0,
+              "value": 1.8831372549019605,
+              "pnl": -0.11686274509803951,
+              "checked": 1792425661.0,
+              "note": "bid depth estimate"
+            },
+            {
+              "asset": "3",
+              "title": "Synthetic market 4",
+              "outcome": "Yes",
+              "shares": 3.9215686274509802,
+              "cost": 2.0,
+              "value": 1.8831372549019605,
+              "pnl": -0.11686274509803951,
+              "checked": 1792425661.0,
+              "note": "bid depth estimate"
+            }
+          ],
+          "last_refresh": 1792425661.0,
+          "decision_counts": {
+            "paper buy: $2.00, 3.9216 shares": 4,
+            "paper sell: $0.96 proceeds, 3.9216 shares": 1,
+            "paper sell: $1.15 proceeds, 3.9216 shares": 1,
+            "risk limit": 1
+          },
+          "scans": [
+            {
+              "wallet": "0x1111111111111111111111111111111111111111",
+              "checked": 1792425661.0,
+              "newest": 1792425661.0,
+              "records": 2,
+              "error": null
+            }
+          ]
+        },
+        {
+          "stage": "remaining positions settled",
+          "timestamp": 1792429261,
+          "mode": "SIMULATION",
+          "cash": 34.113725490196074,
+          "initial_cash": 40,
+          "open_cost": 0,
+          "open_value": 0.0,
+          "realized_pnl": -5.886274509803922,
+          "sale_pnl": -1.886274509803922,
+          "settlement_pnl": -4.0,
+          "sales": 2,
+          "unrealized_pnl": 0.0,
+          "equity": 34.113725490196074,
+          "total_pnl": -5.8862745098039255,
+          "fills": 4,
+          "settled_positions": 2,
+          "unpriced_positions": 0,
+          "positions": [],
+          "last_refresh": 1792429261.0,
+          "decision_counts": {
+            "paper buy: $2.00, 3.9216 shares": 4,
+            "paper sell: $0.96 proceeds, 3.9216 shares": 1,
+            "paper sell: $1.15 proceeds, 3.9216 shares": 1,
+            "risk limit": 1
+          },
+          "scans": [
+            {
+              "wallet": "0x1111111111111111111111111111111111111111",
+              "checked": 1792425661.0,
+              "newest": 1792425661.0,
+              "records": 2,
+              "error": null
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -8,45 +8,82 @@ import time
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
-from urllib.error import URLError
-from copylab.portfolio import initialize, refresh, summary, display
+from urllib.error import URLError, HTTPError
+from copylab.portfolio import initialize, refresh, summary, display, open_lots
+from copylab import runtime
 
 
 def get(url, **params):
-    request = Request(url + '?' + urlencode(params), headers={'User-Agent': 'CopyLab/0.1'})
-    with urlopen(request, timeout=20) as response:
-        return json.load(response)
+    request = Request(url + '?' + urlencode(params), headers={'User-Agent': 'CopyLab/0.2'})
+    for attempt in range(3):
+        try:
+            with urlopen(request, timeout=15) as response:
+                return json.load(response)
+        except HTTPError as error:
+            if error.code not in (429, 500, 502, 503, 504) or attempt == 2:
+                raise
+        except OSError:
+            if attempt == 2:
+                raise
+        time.sleep(2 ** attempt)
+
+
+def event_id(trade):
+    # Display names, avatars and titles may change after a fill is published.
+    fields = ('transactionHash', 'proxyWallet', 'asset', 'side', 'timestamp', 'price', 'size')
+    stable = {k: trade.get(k) for k in fields}
+    for field in ('transactionHash', 'proxyWallet'):
+        if isinstance(stable[field], str):
+            stable[field] = stable[field].lower()
+    return hashlib.sha256(json.dumps(stable, sort_keys=True).encode()).hexdigest()
+
+
+def legacy_id(trade):
+    return hashlib.sha256(json.dumps(trade, sort_keys=True).encode()).hexdigest()
 
 
 class Ledger:
     def __init__(self, path):
-        self.db = sqlite3.connect(path)
+        self.db = sqlite3.connect(path, timeout=30)
         self.db.executescript('''
         CREATE TABLE IF NOT EXISTS seen(id TEXT PRIMARY KEY);
         CREATE TABLE IF NOT EXISTS wallets(wallet TEXT PRIMARY KEY, started REAL);
         CREATE TABLE IF NOT EXISTS fills(id TEXT PRIMARY KEY, day TEXT, asset TEXT,
             price REAL, shares REAL, cost REAL, source TEXT);
         ''')
+        runtime.initialize(self.db)
         initialize(self.db)
+        # Migrate previously copied fills to stable identities without replaying them.
+        with self.db:
+            for source, in self.db.execute('SELECT source FROM fills'):
+                self.db.execute('INSERT OR IGNORE INTO seen VALUES (?)', (event_id(json.loads(source)),))
 
     def spend(self, where='', args=()):
         return self.db.execute('SELECT COALESCE(SUM(cost),0) FROM fills ' + where, args).fetchone()[0]
 
+    def known(self, trade):
+        return self.db.execute('SELECT 1 FROM seen WHERE id IN (?,?)',
+                               (event_id(trade), legacy_id(trade))).fetchone() is not None
+
     def process(self, trade, book, now):
-        key = hashlib.sha256(json.dumps(trade, sort_keys=True).encode()).hexdigest()
+        if self.known(trade):
+            return 'duplicate'
+        key = event_id(trade)
         day = datetime.fromtimestamp(now, timezone.utc).date().isoformat()
         with self.db:
             if not self.db.execute('INSERT OR IGNORE INTO seen VALUES (?)', (key,)).rowcount:
                 return 'duplicate'
             age = now - float(trade['timestamp'])
-            if trade['side'] != 'BUY' or not 0 <= age <= 120:
-                return 'old trade or non-buy'
+            if trade['side'] not in ('BUY', 'SELL') or not 0 <= age <= 120:
+                return 'old trade or unsupported side'
             source_price = float(trade['price'])
             if not math.isfinite(source_price) or not 0 < source_price < 1:
                 return 'invalid source price'
             asset = str(trade['asset'])
             if self.db.execute('SELECT 1 FROM settlements WHERE asset=?', (asset,)).fetchone():
                 return 'already settled'
+            if trade['side'] == 'SELL':
+                return self.sell(trade, book, now, key)
             budget = min(2 - self.spend('WHERE asset=?', (asset,)),
                          8 - self.spend('WHERE day=?', (day,)), 40 - self.spend())
             if budget < 0.01:
@@ -67,31 +104,95 @@ class Ledger:
                     break
             if shares == 0:
                 return 'no acceptable liquidity'
+            minimum = float(book.get('min_order_size', 0))
+            if not math.isfinite(minimum) or minimum < 0:
+                raise ValueError('Invalid minimum order size')
+            if shares + 1e-9 < minimum:
+                return 'below market minimum order size'
             self.db.execute('INSERT INTO fills VALUES (?,?,?,?,?,?,?)',
                             (key, day, asset, gross / shares, shares, gross * 1.02,
                              json.dumps(trade, sort_keys=True)))
+            self.db.execute('DELETE FROM marks WHERE asset=?', (asset,))
             return 'paper buy: $%.2f, %.4f shares' % (gross * 1.02, shares)
 
+    def sell(self, trade, book, now, key):
+        # A source SELL requests a full exit of this source's copied token holdings.
+        wallet = trade.get('proxyWallet', '').lower()
+        lots = [lot for lot in open_lots(self.db) if lot[1] == str(trade['asset'])
+                and json.loads(lot[4]).get('proxyWallet', '').lower() == wallet]
+        levels = sorted(([float(x['price']), float(x['size'])] for x in book['bids']), reverse=True)
+        if any(not all(math.isfinite(x) for x in level) or not 0 <= level[0] <= 1 or level[1] <= 0
+               for level in levels):
+            raise ValueError('Invalid sell order book')
+        total_shares, total_proceeds = 0.0, 0.0
+        for fill_id, asset, available, cost, source in lots:
+            remaining, proceeds = available, 0.0
+            for level in levels:
+                price, size = level
+                if price < float(trade['price']) - 0.02:
+                    break
+                take = min(size, remaining)
+                proceeds += take * price * .98
+                remaining -= take
+                level[1] -= take
+                if remaining <= 1e-9:
+                    break
+            sold = available - remaining
+            if sold > 1e-9:
+                self.db.execute('INSERT INTO exits VALUES (?,?,?,?,?,?)',
+                                (key, fill_id, sold, cost * sold / available, proceeds, now))
+                total_shares += sold
+                total_proceeds += proceeds
+        if total_shares == 0:
+            return 'no matching holding or acceptable exit liquidity'
+        minimum = float(book.get('min_order_size', 0))
+        if not math.isfinite(minimum) or minimum < 0:
+            raise ValueError('Invalid minimum order size')
+        if total_shares + 1e-9 < minimum:
+            self.db.execute('DELETE FROM exits WHERE id=?', (key,))
+            return 'below market minimum exit size'
+        self.db.execute('DELETE FROM marks WHERE asset=?', (str(trade['asset']),))
+        return 'paper sell: $%.2f proceeds, %.4f shares' % (total_proceeds, total_shares)
 
-def scan(ledger, wallet):
-    # Legacy v1 routes remain documented; explicit schema checks detect API changes.
-    trades = get('https://data-api.polymarket.com/trades', user=wallet, limit=500, takerOnly='false')
+
+def scan(ledger, wallet, fetch=None, clock=None):
+    fetch = get if fetch is None else fetch
+    clock = time.time if clock is None else clock
+    trades = fetch('https://data-api.polymarket.com/trades', user=wallet, limit=500, takerOnly='false')
     if not isinstance(trades, list):
         raise ValueError('Unexpected trades API schema')
-    now = time.time()
+    now = clock()
+    # Validate the complete timestamp set before advancing scan health.
+    ordered = sorted(trades, key=lambda t: float(t['timestamp']))
+    errors = []
     row = ledger.db.execute('SELECT started FROM wallets WHERE wallet=?', (wallet,)).fetchone()
     if row is None:
         with ledger.db:
             ledger.db.execute('INSERT INTO wallets VALUES (?,?)', (wallet, now))
         print(wallet, 'initialized; historical trades skipped', flush=True)
-        return
-    for trade in sorted(trades, key=lambda t: float(t['timestamp'])):
-        if float(trade['timestamp']) <= row[0] or now - float(trade['timestamp']) > 120:
-            continue
-        if trade.get('proxyWallet', '').lower() != wallet or trade.get('side') != 'BUY':
-            continue
-        book = get('https://clob.polymarket.com/book', token_id=trade['asset'])
-        print(wallet, ledger.process(trade, book, time.time()), flush=True)
+    else:
+        if len(ordered) >= 500 and float(ordered[0]['timestamp']) > max(row[0], now-120):
+            errors.append('Trade feed reached 500 records inside the copy window; activity may be missing')
+        for trade in ordered:
+            try:
+                if not row[0] < float(trade['timestamp']) <= now or now - float(trade['timestamp']) > 120:
+                    continue
+                if trade.get('proxyWallet', '').lower() != wallet or trade.get('side') not in ('BUY', 'SELL'):
+                    continue
+                if ledger.known(trade):
+                    continue
+                book = fetch('https://clob.polymarket.com/book', token_id=trade['asset'])
+                if str(book.get('asset_id')) != str(trade['asset']):
+                    raise ValueError('Order book identity mismatch')
+                result = ledger.process(trade, book, clock())
+                with ledger.db:
+                    ledger.db.execute('INSERT OR REPLACE INTO decisions VALUES (?,?,?)',
+                                      (event_id(trade), clock(), result))
+                print(wallet, result, flush=True)
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                errors.append(str(error))
+                print('Trade skipped after error; will retry while fresh:', str(error), flush=True)
+    runtime.scan_result(ledger, wallet, trades, '; '.join(errors) or None, now)
 
 
 def main():
@@ -99,19 +200,36 @@ def main():
     parser.add_argument('--db', default='paper.sqlite3')
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('leaderboard')
+    simulation = sub.add_parser('simulate', help='Offline synthetic scenarios; not a profitability backtest')
+    simulation.add_argument('--output', default='simulation-results.json')
+    history = sub.add_parser('history', help='Saved live-paper polling snapshots')
+    history.add_argument('--limit', type=int, default=20)
     status = sub.add_parser('status')
     status.add_argument('--offline', action='store_true', help='Use saved valuations, expire after 120 seconds')
     status.add_argument('--json', action='store_true', help='Print machine-readable portfolio')
     watch = sub.add_parser('watch')
-    watch.add_argument('--wallet', action='append', required=True)
+    watch.add_argument('--wallet', action='append', default=[])
+    watch.add_argument('--wallet-file', help='JSON file containing a wallets list')
     watch.add_argument('--poll', type=int, default=30)
     watch.add_argument('--once', action='store_true')
+    watch.add_argument('--duration', type=int, help='Stop after this many seconds; omit to keep running')
     args = parser.parse_args()
     if args.command == 'leaderboard':
         print(json.dumps(get('https://data-api.polymarket.com/v1/leaderboard',
                             limit=10, timePeriod='MONTH', orderBy='PNL'), indent=2))
         return
+    if args.command == 'simulate':
+        from copylab.simulation import run
+        run(args.output)
+        return
     ledger = Ledger(args.db)
+    if args.command == 'history':
+        if not 1 <= args.limit <= 1000:
+            parser.error('--limit must be between 1 and 1000')
+        rows = ledger.db.execute('SELECT checked, report FROM snapshots ORDER BY id DESC LIMIT ?',
+                                 (args.limit,)).fetchall()
+        print(json.dumps([dict(checked=r[0], **json.loads(r[1])) for r in reversed(rows)], indent=2))
+        return
     if args.command == 'status':
         if not args.offline:
             refresh(ledger, get)
@@ -121,20 +239,38 @@ def main():
         else:
             display(report)
         return
-    if args.poll < 5 or any(not re.fullmatch(r'0x[0-9a-fA-F]{40}', w) for w in args.wallet):
+    if args.wallet_file:
+        from pathlib import Path
+        config = json.loads(Path(args.wallet_file).read_text())
+        if not isinstance(config, dict) or not isinstance(config.get('wallets'), list):
+            parser.error('--wallet-file must contain a wallets list')
+        args.wallet.extend(config['wallets'])
+    if not args.wallet:
+        parser.error('Specify --wallet or --wallet-file')
+    if args.poll < 5 or any(not isinstance(w, str) or not re.fullmatch(r'0x[0-9a-fA-F]{40}', w) for w in args.wallet):
         parser.error('Use valid 0x wallet addresses and --poll of at least 5 seconds')
-    print('SIMULATION ONLY. Ctrl+C stops monitoring.', flush=True)
-    while True:
-        for wallet in dict.fromkeys(w.lower() for w in args.wallet):
-            try:
-                scan(ledger, wallet)
-            except (URLError, ValueError, KeyError, TypeError) as error:
-                print('Scan failed; no fill assumed:', str(error), flush=True)
-        refresh(ledger, get)
-        display(summary(ledger))
-        if args.once:
-            break
-        time.sleep(args.poll)
+    if args.duration is not None and args.duration <= 0:
+        parser.error('--duration must be positive')
+    with runtime.watcher_lock(args.db):
+        started = time.monotonic()
+        print('SIMULATION ONLY. Ctrl+C stops monitoring.', flush=True)
+        while True:
+            for wallet in dict.fromkeys(w.lower() for w in args.wallet):
+                try:
+                    scan(ledger, wallet)
+                except (OSError, ValueError, KeyError, TypeError) as error:
+                    runtime.scan_result(ledger, wallet, error=str(error))
+                    print('Wallet scan failed:', str(error), flush=True)
+            refresh(ledger, get)
+            report = summary(ledger)
+            runtime.save_snapshot(ledger, report)
+            display(report)
+            elapsed = time.monotonic() - started
+            if args.once or (args.duration is not None and elapsed >= args.duration):
+                break
+            delay = args.poll if args.duration is None else min(args.poll, args.duration-elapsed)
+            time.sleep(max(0, delay))
+
 
 
 if __name__ == '__main__':
@@ -142,5 +278,5 @@ if __name__ == '__main__':
         main()
     except KeyboardInterrupt:
         print('\nMonitoring stopped. Ledger saved.')
-    except (URLError, ValueError) as error:
+    except (OSError, ValueError) as error:
         raise SystemExit('Request failed: ' + str(error))
