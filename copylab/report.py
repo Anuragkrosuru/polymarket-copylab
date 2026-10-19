@@ -108,8 +108,12 @@ def export(ledger, directory, docx_python=None, now=None):
             report['screening']['selected'] = [r for r in screen['traders'] if r['selected']]
         except (OSError, ValueError, KeyError, TypeError) as error:
             report['screening_error'] = str(error)
+    from copylab.combined_report import combine,markdown
+    database=ledger.db.execute('PRAGMA database_list').fetchone()[2]
+    root=Path(database).resolve().parent if database else directory.resolve().parent
+    report=combine(report,root,directory,report['generated_timestamp'])
     atomic_write(directory/'trade-report.json', json.dumps(without_quantities(report), indent=2)+'\n')
-    fields = ['number','type','time','time_basis','market','outcome','wallet','price',
+    fields = ['number','bot','type','time','time_basis','market','outcome','wallet','price','second_price','price_basis','exit_reason','net_return_percent',
               'gross','fee_reserve','cost_basis','cash_change','realized_pnl','execution_policy','source_price','relative_price_change','source_age_seconds','entry_drag','sizing_target_cost','sizing_relative_commitment','sizing_reason','asset','source_transaction','event_id']
     stream = io.StringIO(newline='')
     writer = csv.DictWriter(stream, fieldnames=fields, extrasaction='ignore')
@@ -126,24 +130,7 @@ def export(ledger, directory, docx_python=None, now=None):
         row=json.loads(context)
         audit_writer.writerow({k:("'"+v if isinstance(v,str) and v.startswith(('=','+','-','@','\t','\r')) else v) for k,v in row.items()})
     atomic_write(directory/'execution-quality.csv',audit_stream.getvalue())
-    account = report['account']
-    lines = ['# Paper trading trade and profit report', '', 'Updated: '+report['generated'], '', report['scope'], '',
-             'Cash: '+dollars(account['cash']), 'Equity: '+dollars(account['equity']),
-             'Total profit or loss: '+dollars(account['total_pnl']),
-             'Realized profit or loss: '+dollars(account['realized_pnl']),
-             'Estimated open profit or loss: '+dollars(account['unrealized_pnl']),
-             'Total entry and exit fee reserves: '+dollars(report['fee_reserve_total']),
-             'Pending copied exit requests: '+str(account.get('pending_exit_requests',0)), '', report['explanation'], '']
-    if not report['trades']:
-        lines += ['No qualifying copied trades have been recorded yet. Profit is $0 because the account has not traded.', '']
-    for event in report['trades']:
-        lines += ['## %d %s %s' % (event['number'], event['type'], event['market']), '',
-                  event['time']+' ('+event['time_basis']+')', 'Outcome: '+event['outcome'],
-                  'Price: $%.4f' % event['price'],
-                  'Cash change: '+dollars(event['cash_change'])+' | Fee reserve: '+dollars(event['fee_reserve']),
-                  'Realized profit or loss: '+('Recorded on exit' if event['realized_pnl'] is None else dollars(event['realized_pnl'])),
-                  'Source wallet: '+event['wallet'], '']
-    atomic_write(directory/'trade-report.md', '\n'.join(lines))
+    atomic_write(directory/'trade-report.md',markdown(report))
     if docx_python:
         subprocess.run([docx_python, '-m', 'copylab.report_docx',
                         str(directory/'trade-report.json'), str(directory/'trade-report.docx')],

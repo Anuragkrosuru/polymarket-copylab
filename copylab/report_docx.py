@@ -70,6 +70,66 @@ def table(document, headings, rows, widths):
     return grid
 
 
+def combined_body(document, report, output):
+    from copylab.combined_report import price_text
+    document.core_properties.title='All Three Paper Bots Trade and Profit Report'
+    document.core_properties.author='CopyLab'
+    document.add_paragraph('All Three Paper Bots Trade and Profit Report','Title')
+    document.add_paragraph('Updated '+report['generated'])
+    document.add_paragraph(report['scope'])
+    total=report['combined']
+    document.add_paragraph('Combined account value is '+dollars(total['equity'])+' with total profit or loss of '+dollars(total['total_pnl'])+'. Realized profit or loss is '+dollars(total['realized_pnl'])+'. All amounts are simulated.')
+    table(document,['Measure','Amount'],[(
+        label,dollars(total[key])) for label,key in [('Starting balances','initial_cash'),('Available cash','cash'),
+        ('Estimated combined equity','equity'),('Total profit or loss','total_pnl'),('Realized profit or loss','realized_pnl'),
+        ('Estimated open profit or loss','unrealized_pnl')]], [4.7,2.3])
+    document.add_paragraph(report['explanation'])
+    document.add_paragraph('Results by bot','Heading 1')
+    for bot in report['bots']:
+        document.add_paragraph(bot['name'],'Heading 2')
+        table(document,['Cash','Estimated equity','Realized profit or loss','Estimated open profit or loss'],
+              [(dollars(bot['cash']),dollars(bot['equity']),dollars(bot['realized_pnl']),dollars(bot['unrealized_pnl']))],
+              [1.3,1.5,2.0,2.2])
+        document.add_paragraph('Entries: %d. Exits or settlements: %d. Last source update %s. %s%s' %
+            (bot['entries'],bot['exits'],timestamp(bot['source_updated']),
+             'Source status is stale or unavailable. ' if bot['stale'] else '',bot['status']))
+        if not bot['entries']:
+            document.add_paragraph('No entries have been recorded for this bot.')
+    opened=[(b,p) for b in report['bots'] for p in b['positions']]
+    if opened:
+        document.add_paragraph('Open positions','Heading 1')
+        for bot,position in opened:
+            document.add_paragraph(bot['name']+' '+clean(position['title']),'Heading 2')
+            document.add_paragraph('Outcome '+clean(position['outcome']))
+            table(document,['Entry cost','Estimated current value','Estimated profit or loss'],
+                  [(dollars(position['cost']),dollars(position['value']),dollars(position['pnl']))],[2.2,2.4,2.4])
+            if 'expected_payout' in position:
+                document.add_paragraph('Expected settlement payout '+dollars(position['expected_payout'])+'. This is not current equity or realized profit.')
+            if position.get('target_proceeds') is not None:
+                document.add_paragraph('Five percent net profit target proceeds '+dollars(position['target_proceeds'])+'. A target is not a guaranteed fill.')
+    document.add_paragraph('Complete trade history','Heading 1')
+    if not report['trades']:
+        document.add_paragraph('No trades have been recorded by any bot.')
+    for event in report['trades']:
+        document.add_paragraph('%d %s %s'%(event['number'],event['bot'],event['type']),'Heading 2')
+        paragraph=document.add_paragraph(clean(event['market'])+' | '+clean(event['outcome']))
+        paragraph.paragraph_format.keep_with_next=True
+        paragraph=document.add_paragraph(event['time']+' | '+event['time_basis'])
+        paragraph.paragraph_format.keep_with_next=True
+        table(document,['Price','Entry cost basis','Cash change','Realized profit or loss'],
+              [(price_text(event),dollars(event['cost_basis']),dollars(event['cash_change']),
+                'On exit' if event['realized_pnl'] is None else dollars(event['realized_pnl']))],[1.7,1.7,1.7,1.9])
+        detail=''
+        if event.get('exit_reason'):detail+=' | Exit: '+event['exit_reason']
+        if event.get('net_return_percent') is not None:detail+=' | Net return %.2f%%'%event['net_return_percent']
+        if detail:document.add_paragraph(clean(detail))
+    output=Path(output);temporary=output.with_name(output.stem+'.tmp.docx')
+    for root in (document._element, document.styles.element):
+        for border in list(root.iter(qn('w:pBdr'))):
+            border.getparent().remove(border)
+    document.save(temporary);os.replace(temporary,output)
+
+
 def build(report, output):
     document = Document()
     section = document.sections[0]
@@ -89,6 +149,9 @@ def build(report, output):
         style.font.bold = name != 'Title'
         style.paragraph_format.space_before = Pt(12 if name != 'Title' else 0)
         style.paragraph_format.space_after = Pt(7)
+    if report.get('bots'):
+        combined_body(document,report,output)
+        return
     document.core_properties.title = 'Paper Trading Trade and Profit Report'
     document.core_properties.author = 'CopyLab'
     document.add_paragraph('Paper Trading Trade and Profit Report', 'Title')

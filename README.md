@@ -264,3 +264,25 @@ requires a 0.5-basis-point BTC pullback and 0.25-basis-point recovery. Up to fou
 entries per interval are permitted with one position open at a time. Existing
 $3 position, $12 daily purchases, $40 lifetime purchases and $4 daily loss pause
 remain. `--strategy lead` retains the old latency experiment for comparison.
+
+### One report for all three bots
+
+`reports/trade-report.docx`, `trade-report.md`, `trade-report.json` and
+`trade-history.csv` now combine the copy, arbitrage and BTC accounts. The copy
+watcher refreshes these about every 30 seconds. Run `python3 -m copylab report`
+for a manual export, adding `--docx-python` with a Python containing python-docx
+for Word. Separate bot logs and ledgers remain independent.
+
+The report includes the $120 starting total, combined cash/equity/PnL, separate
+$40 account summaries, open positions and every entry, exit and settlement with
+a bot label. Quantities are omitted. BTC prices include modeled costs; copy
+prices are before their reserves. Pair buys show both outcome prices. Expected
+arbitrage payouts are separate from realized profit and are not marked as equity.
+An open arbitrage pair without a valuation, stale BTC mark, or missing account
+makes combined equity/PnL unknown. Account source times are shown because the
+three snapshots are not simultaneous. Existing arbitrage settlements without a
+recorded timestamp are labeled as such rather than assigned an invented time.
+
+Other bot databases are opened read-only; report export never creates or migrates
+them or changes trading rules. The JSON keeps `account` as the legacy copy-account
+field and adds `bots` and `combined`; its `trades` list and CSV now cover all bots.
