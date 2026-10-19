@@ -145,3 +145,19 @@ def export(ledger, directory, docx_python=None, now=None):
                         str(directory/'trade-report.json'), str(directory/'trade-report.docx')],
                        check=True, timeout=45, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return report
+
+
+def write_trade_log(ledger, path):
+    """A readable trade-only view; diagnostics and mark updates stay elsewhere."""
+    report=collect(ledger)
+    lines=[]
+    for event in report['trades']:
+        parts=[event['time'],'PAPER '+event['type'],event['market'],event['outcome'],
+               '%.6f shares @ $%.4f'%(event['shares'],event['price'])]
+        if event['type']=='BUY':
+            parts.append('Spent '+dollars(-event['cash_change']))
+        else:
+            parts.append('Received '+dollars(event['cash_change']))
+            parts.append('Realized P/L '+dollars(event['realized_pnl']))
+        lines.append(' | '.join(part for part in parts if part))
+    atomic_write(path,'\n'.join(lines)+ ('\n' if lines else ''))

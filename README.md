@@ -84,7 +84,7 @@ Future work: current API migration, market-specific fees, proportional source ex
 
 ## Current local trial
 
-The paper watcher was launched in the background with the included three-wallet watchlist. Its output is in `paper.log`, its process ID is in `paper.pid`, and accounting and progress are in `paper.sqlite3`. These local runtime files are ignored by Git. GitHub contains code and the reproducible synthetic test output, not the live paper account.
+The paper watcher was launched in the background with the included three-wallet watchlist. Its copied trades and settlements are in `paper.log`, operational details are in `paper-diagnostics.log`, its process ID is in `paper.pid`, and accounting and progress are in `paper.sqlite3`. These local runtime files are ignored by Git. GitHub contains code and the reproducible synthetic test output, not the live paper account.
 
 On this Mac you can stop the background trial from this folder:
 
@@ -155,3 +155,7 @@ Polymarket documents a v1 `/trades` limit of 200 requests per 10 seconds: https:
 New buys need valid, noncrossed bid and ask books, enough visible bid depth for the copied share count, and an estimated immediate liquidation loss no greater than 10% of all-in entry cost after the fixed entry and exit reserves. This is a cost filter, not a forecast or a stop-loss. It complements the existing relative source-price guard and spending limits. Previously recorded trades are not rewritten to satisfy newer rules.
 
 New trade sources record an execution-policy version. `reports/trade-history.csv` includes the source entry, copied entry, relative price difference, observed source-signal age, and entry drag when recorded. Older fills retain a legacy label and missing measurements remain blank. `reports/execution-quality.csv` records each checked execution attempt, including rejected entries and changed-book exit retries. Source exits are still requests to close the matching copied lots in full, not reconstructions of the trader's full portfolio.
+
+## Trade only log
+
+The current background watcher uses `--trade-log paper.log` and sends console diagnostics to `paper-diagnostics.log`. The trade log is rebuilt from the saved ledger each cycle, including earlier trades. Each line is one copied buy, aggregated copied sale, or confirmed paper settlement, with timestamp, market, outcome, shares, price, cash change, and realized P/L on exits. Portfolio valuation updates, wallet polling, rejected signals, and errors stay in diagnostics and the status/report commands. The old verbose log is preserved as `paper-verbose-backup.log`.

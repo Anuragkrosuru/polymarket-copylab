@@ -306,6 +306,7 @@ def main():
     watch.add_argument('--poll', type=int, default=5)
     watch.add_argument('--report-every', type=int, default=30, help='Seconds between saved reports and snapshots')
     watch.add_argument('--once', action='store_true')
+    watch.add_argument('--trade-log', help='Write only copied trades and settlements to this file')
     watch.add_argument('--report-dir', help='Refresh trade report after every poll')
     watch.add_argument('--docx-python', help='Python executable with python-docx for Word reports')
     watch.add_argument('--duration', type=int, help='Stop after this many seconds; omit to keep running')
@@ -411,6 +412,12 @@ def main():
             with ledger.db:
                 ledger.db.execute('INSERT OR REPLACE INTO polling VALUES (1,?,?,?,?)',
                                   (time.time(), args.poll, observed_interval, time.monotonic()-cycle_started))
+            if args.trade_log:
+                from copylab.report import write_trade_log
+                try:
+                    write_trade_log(ledger,args.trade_log)
+                except (OSError,ValueError) as error:
+                    print('Trade log update failed:',str(error),flush=True)
             elapsed = time.monotonic() - started
             finished = args.once or (args.duration is not None and elapsed >= args.duration)
             if last_report is None or time.monotonic()-last_report >= args.report_every or finished:
