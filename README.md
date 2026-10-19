@@ -208,3 +208,34 @@ Run `python3 -m copylab.btc15 --simulate` for invented scenarios or
 Robinhood key using `scripts/connect-robinhood.command`. Until connected, the
 collector records Polymarket quotes and makes **no entries**. No ten-second lead
 has been verified. Reports are in `reports/btc15/`; the account is `btc15.sqlite3`.
+
+### Relative source commitment sizing
+
+The first copy bot now sizes new entries using each trader's observed gross BUY
+commitment, combining fills for the same market and outcome. It compares that
+amount with the trader's median commitment across other market/outcome groups in
+the observed past 30 days. At least 20 distinct other markets are required; groups
+with a buy in the two minutes before the signal are excluded from the baseline.
+Only source observations timestamped at or before the signal are used. Feed
+history is bounded and may omit earlier fills. It is retained across restarts;
+startup observations establish sizing history but are never copied as new trades.
+No extra API requests are needed for this feature.
+
+For main traders, half their typical commitment targets $0.50, typical targets $1,
+and twice typical or larger targets $2. Targets have a $0.25 floor and always stay
+within the trader's existing cap. Experimental traders use the same ratio against
+their $1 maximum. Without sufficient history, targets default to $0.50 for main
+traders and $0.25 for experimental traders. These are cumulative target costs per
+outcome, not extra allocations for every fill: prior copied spending is subtracted.
+A later source fill can increase the target, subject to all existing limits.
+
+Venue minimum shares still apply. Small allocations may be skipped instead of
+rounded up. Already recorded positions are not resized. The $2 combined market
+cap, $40 lifetime purchase cap, experimental daily caps and execution guards
+remain; there is no global daily purchase cap.
+
+This is a sizing proxy, not measured confidence or risk probability. Gross buys
+can include repeated entries or hedges, and we do not know traders' total capital,
+full position history or exposure elsewhere. The trade JSON and CSV include the
+target, relative commitment and reason; execution-quality.csv additionally records
+the baseline, observed source commitment and history sample size.

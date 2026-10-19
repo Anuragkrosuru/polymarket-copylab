@@ -47,6 +47,9 @@ def collect(ledger, now=None):
                 execution_policy=trade.get('execution_policy','legacy'),source_price=trade.get('price'),
                 relative_price_change=price/float(trade['price'])-1 if trade.get('price') else None,
                 source_age_seconds=execution.get('source_age_seconds'),entry_drag=execution.get('entry_drag'),
+                sizing=trade.get('sizing'),sizing_target_cost=trade.get('sizing',{}).get('target_cost'),
+                sizing_relative_commitment=trade.get('sizing',{}).get('relative_commitment'),
+                sizing_reason=trade.get('sizing',{}).get('reason'),
                 asset=asset, market=trade.get('title', asset), outcome=trade.get('outcome', ''),
                 wallet=trade.get('proxyWallet', ''), source_transaction=trade.get('transactionHash', ''),
                 shares=shares, price=price, gross=price*shares, fee_reserve=cost-price*shares,
@@ -106,7 +109,7 @@ def export(ledger, directory, docx_python=None, now=None):
             report['screening_error'] = str(error)
     atomic_write(directory/'trade-report.json', json.dumps(report, indent=2)+'\n')
     fields = ['number','type','time','time_basis','market','outcome','wallet','shares','price',
-              'gross','fee_reserve','cost_basis','cash_change','realized_pnl','execution_policy','source_price','relative_price_change','source_age_seconds','entry_drag','asset','source_transaction','event_id']
+              'gross','fee_reserve','cost_basis','cash_change','realized_pnl','execution_policy','source_price','relative_price_change','source_age_seconds','entry_drag','sizing_target_cost','sizing_relative_commitment','sizing_reason','asset','source_transaction','event_id']
     stream = io.StringIO(newline='')
     writer = csv.DictWriter(stream, fieldnames=fields, extrasaction='ignore')
     writer.writeheader()
@@ -114,7 +117,7 @@ def export(ledger, directory, docx_python=None, now=None):
                      for k,v in event.items()} for event in report['trades'])
     atomic_write(directory/'trade-history.csv', stream.getvalue())
     audit_fields=['checked','policy','side','wallet','market','outcome','asset','source_price','entry_price',
-                  'relative_price_change','source_age_seconds','entry_drag','best_ask','best_bid','copied_exit_shares_total','copied_exit_proceeds_total','result']
+                  'relative_price_change','source_age_seconds','entry_drag','best_ask','best_bid','sizing_policy','sizing_target_cost','sizing_source_commitment','sizing_typical_commitment','sizing_relative_commitment','sizing_history_markets','sizing_reason','copied_exit_shares_total','copied_exit_proceeds_total','result']
     audit_stream=io.StringIO(newline='')
     audit_writer=csv.DictWriter(audit_stream,fieldnames=audit_fields,extrasaction='ignore')
     audit_writer.writeheader()

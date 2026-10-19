@@ -5,7 +5,7 @@ import math
 
 from copylab.portfolio import bid_value
 
-POLICY_VERSION = 'copy-v3-entry-depth-exit-retry'
+POLICY_VERSION = 'copy-v3-entry-depth-exit-retry-sizing-v1'
 MAX_ENTRY_DRAG = 0.10
 
 
@@ -56,6 +56,8 @@ def audit(ledger,trade,book,result,checked):
     context=dict(policy=POLICY_VERSION,market=trade.get('title',''),outcome=trade.get('outcome',''),side=trade['side'],wallet=trade.get('proxyWallet'),asset=trade['asset'],
                  source_price=source,source_timestamp=trade['timestamp'],checked=checked,
                  source_age_seconds=checked-float(trade['timestamp']),result=result,**quote)
+    if trade.get('sizing'):
+        context.update({'sizing_'+key:value for key,value in trade['sizing'].items()})
     if fill:
         price,shares,cost=fill
         _,drag=entry_quality(book,shares,cost)

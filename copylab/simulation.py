@@ -79,7 +79,7 @@ def run(output):
     result = dict(kind='SYNTHETIC_INTEGRATION_TEST',
                   generated=datetime.now(timezone.utc).isoformat(),
                   disclaimer='Invented prices and outcomes. Tests software behavior; does not measure or predict trading profitability.',
-                  assumptions=dict(initial_cash=40, buy_cost=2, daily_spend_cap=None,
+                  assumptions=dict(initial_cash=40, buy_cost=.5, daily_spend_cap=None,
                                    entry_reserve=.02, exit_reserve=.02, source_entry_price=.5,
                                    policy='Source SELL requests full exit of matching copied holdings.'),
                   scenarios=scenarios)

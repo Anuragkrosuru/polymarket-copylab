@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 from copylab.portfolio import initialize, refresh, summary, display, open_lots
-from copylab import runtime
+from copylab import runtime, sizing
 from copylab.execution import POLICY_VERSION, levels, entry_quality, bid_fingerprint, audit
 
 
@@ -53,6 +53,7 @@ class Ledger:
             price REAL, shares REAL, cost REAL, source TEXT);
         ''')
         runtime.initialize(self.db)
+        sizing.initialize(self.db)
         initialize(self.db)
         # Migrate previously copied fills to stable identities without replaying them.
         with self.db:
@@ -244,6 +245,7 @@ def scan(ledger, wallet, fetch=None, clock=None, allow_buys=True, max_cost=2, co
     now = clock()
     # Validate the complete timestamp set before advancing scan health.
     ordered = sorted(trades, key=lambda t: float(t['timestamp']))
+    sizing.observe(ledger, wallet, ordered, now)
     errors = []
     row = ledger.db.execute('SELECT started FROM wallets WHERE wallet=?', (wallet,)).fetchone()
     if row is None:
@@ -268,7 +270,10 @@ def scan(ledger, wallet, fetch=None, clock=None, allow_buys=True, max_cost=2, co
                     raise ValueError('Order book market mismatch')
                 if str(book.get('asset_id')) != str(trade['asset']):
                     raise ValueError('Order book identity mismatch')
-                result = ledger.process(trade, book, clock(), max_cost=max_cost, copy_group=copy_group)
+                allocation = sizing.target(ledger, trade, max_cost) if trade['side'] == 'BUY' else None
+                if allocation:
+                    trade = dict(trade, sizing=allocation)
+                result = ledger.process(trade, book, clock(), max_cost=allocation['target_cost'] if allocation else max_cost, copy_group=copy_group)
                 with ledger.db:
                     ledger.db.execute('INSERT OR REPLACE INTO decisions VALUES (?,?,?)',
                                       (event_id(trade), clock(), result))
