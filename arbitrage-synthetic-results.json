@@ -1,0 +1,18 @@
+{
+  "label": "SYNTHETIC ONLY \u2014 not live performance",
+  "profitable_pair": {
+    "cost": 4.675000000000001,
+    "settlement": 5,
+    "profit": 0.3249999999999993
+  },
+  "normal_spread": {
+    "cost": 5.555000000000001,
+    "action": "reject"
+  },
+  "second_leg_failure_stress": {
+    "first_leg_cost": 2.3100000000000005,
+    "unwind_proceeds": 1.71,
+    "loss": -0.6000000000000005,
+    "note": "If bids vanish, unwind may fail and exposure remains."
+  }
+}

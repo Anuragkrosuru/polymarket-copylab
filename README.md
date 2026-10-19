@@ -159,3 +159,42 @@ New trade sources record an execution-policy version. `reports/trade-history.csv
 ## Trade only log
 
 The current background watcher uses `--trade-log paper.log` and sends console diagnostics to `paper-diagnostics.log`. The trade log is rebuilt from the saved ledger each cycle, including earlier trades. Each line is one copied buy, aggregated copied sale, or confirmed paper settlement, with timestamp, market, outcome, shares, price, cash change, and realized P/L on exits. Portfolio valuation updates, wallet polling, rejected signals, and errors stay in diagnostics and the status/report commands. The old verbose log is preserved as `paper-verbose-backup.log`.
+
+### Independent arbitrage paper scanner
+
+Run `python3 -m copylab.arbitrage` (or `--once` for one scan). This never submits
+orders. It has a separate $40 account in `arbitrage.sqlite3`, with at most $6 per
+complete pair, $12 of purchases per UTC day and $40 lifetime purchases. Five shares
+per outcome are the baseline minimum; higher venue minimums are respected.
+Discovery samples up to 60 ordinary binary markets from the 500 most active Gamma
+markets, refreshed every ten minutes. Negative-risk markets are excluded. A cycle
+checks markets sequentially; the ten-second target is a minimum interval, not a
+promise that every market is checked every ten seconds.
+
+The scanner walks actual asks for equal quantities of both outcomes, reserves 10%
+of notional for costs, requires at least $0.02 and 1% expected edge, checks token and
+condition identities and rejects crossed books or incomplete depth. A candidate
+must pass a second book check; each parallel pair fetch must finish within two
+seconds. The reserve is a conservative modeling assumption, **not the exact market
+fee schedule**, and does not include every possible operational cost.
+
+Paper fills are conditional complete-pair fills. Live orders would be sequential:
+the second leg can fail, leaving directional exposure. Rechecking quotes does not
+eliminate that risk. This simulation cannot demonstrate executable arbitrage or
+predict profitability. No merging or redemption transactions are sent. Payouts are
+recorded only after a matching binary market is confirmed closed with one winner;
+expected payout is shown separately from realized profit. No mark-to-market equity
+is reported for open pairs.
+
+`reports/arbitrage/status.json` contains last scan time, errors, rejection reasons,
+cash, expected gains and realized PnL. `reports/arbitrage/trades.csv` contains every
+pair. `arbitrage.log` contains trades only; `arbitrage-diagnostics.log` is used by
+the background runner. The existing copy bot and its account remain independent.
+The scanner stops when its local process or computer stops.
+
+Run `python3 -m copylab.arbitrage --simulate` for clearly labeled invented scenarios:
+a complete-pair profit, a rejected ordinary spread and a losing second-leg-failure
+stress case. These are accounting examples, not historical or live returns.
+
+Official references: [positions and tokens](https://docs.polymarket.com/concepts/positions-tokens)
+and [market fees](https://docs.polymarket.com/trading/fees).
