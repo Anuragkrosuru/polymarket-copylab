@@ -47,7 +47,7 @@ def target(ledger, trade, cap):
     market_count=len({c for c,total in history})
     median=statistics.median(total for _,total in history) if market_count >= MIN_MARKETS else None
     ratio=current/median if median and current > 0 else None
-    amount=min(cap,max(.25,cap*ratio/2)) if ratio is not None else min(cap,.5 if cap >= 2 else .25)
+    amount=min(cap,max(.25,cap*ratio/2)) if ratio is not None else cap*.25
     return dict(policy=VERSION,target_cost=round(amount,6),source_commitment=current,
                 typical_commitment=median,relative_commitment=ratio,history_markets=market_count,
                 reason='relative gross buy commitment' if ratio is not None else 'limited history: conservative fallback',

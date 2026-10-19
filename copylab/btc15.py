@@ -17,7 +17,7 @@ from urllib.request import Request, urlopen
 
 from copylab.runtime import watcher_lock
 from copylab.presentation import without_quantities
-from copylab import btc_trend
+from copylab import btc_trend, paper_config
 
 CONFIG = '.env.robinhood.json'
 
@@ -154,10 +154,11 @@ def fill(book, side, shares, fee_rate):
 
 
 class Engine:
-    def __init__(self, path, strategy='trend'):
+    def __init__(self, path, strategy='trend', initial_cash=None, goal=None, compound=None):
         self.strategy=strategy
         self.last_signal={}
         self.db = sqlite3.connect(path, timeout=10)
+        self.paper=paper_config.initialize(self.db,initial_cash,goal,compound)
         self.db.executescript('''
         CREATE TABLE IF NOT EXISTS samples(id INTEGER PRIMARY KEY, received REAL, condition TEXT, rh REAL, upask REAL, downask REAL, payload TEXT);
         CREATE INDEX IF NOT EXISTS samples_time ON samples(received);
@@ -191,7 +192,7 @@ class Engine:
     def state(self, books=None):
         positions = self.positions()
         spent = sum(t['cost'] for t in positions)
-        cash = 40-spent+sum(t['proceeds'] or 0 for t in positions)
+        cash = self.paper['initial_cash']-spent+sum(t['proceeds'] or 0 for t in positions)
         open_value, unknown = 0., False
         for t in positions:
             if t['closed'] is None:
@@ -200,10 +201,10 @@ class Engine:
                     open_value += fill(book, 'bids', t['shares'], t['market']['fee_rate'])
                 except (KeyError, TypeError, ValueError):
                     unknown = True
-        return dict(initial_cash=40, cash=cash, lifetime_spend=spent,
+        return dict(**paper_config.progress(self.paper,None if unknown else cash+open_value),initial_cash=self.paper['initial_cash'], cash=cash, lifetime_spend=spent,
                     realized_pnl=sum(t['proceeds']-t['cost'] for t in positions if t['closed'] is not None),
                     equity=None if unknown else cash+open_value,
-                    total_pnl=None if unknown else cash+open_value-40,
+                    total_pnl=None if unknown else cash+open_value-self.paper['initial_cash'],
                     trades=positions)
 
     def settle(self, market, now):
@@ -225,7 +226,7 @@ class Engine:
         day = datetime.fromtimestamp(now, timezone.utc).date().isoformat()
         baseline = self.db.execute('SELECT baseline,halted FROM days WHERE day=?',(day,)).fetchone()
         state = self.state(books)
-        breached = bool(baseline and state['equity'] is not None and baseline[0]-state['equity'] >= 4)
+        breached = bool(baseline and state['equity'] is not None and baseline[0]-state['equity'] >= 4*paper_config.scale(self.paper))
         if breached:
             with self.db:
                 self.db.execute('UPDATE days SET halted=1 WHERE day=?',(day,))
@@ -270,7 +271,7 @@ class Engine:
             if baseline is None and state['equity'] is not None:
                 self.db.execute('INSERT INTO days VALUES (?,?,0)',(day,state['equity']))
                 baseline=(state['equity'],0)
-            if baseline and state['equity'] is not None and baseline[0]-state['equity'] >= 4:
+            if baseline and state['equity'] is not None and baseline[0]-state['equity'] >= 4*paper_config.scale(self.paper):
                 self.db.execute('UPDATE days SET halted=1 WHERE day=?',(day,))
                 baseline=(baseline[0],1)
         halted = not baseline or bool(baseline[1]) or state['equity'] is None
@@ -291,12 +292,18 @@ class Engine:
                 ready,reason=btc_trend.reentry(self.db,market,direction,now)
                 if not ready:
                     return reason
+            state=self.state(books)
+            risk_scale=paper_config.scale(self.paper,state['realized_pnl'])
+            position_cap=3*risk_scale
             quantity = max(5, market['minimum'], number(books[market['tokens'][direction]]['min_order_size']))
+            if self.paper['compound'] or self.paper['initial_cash']!=40:
+                quantity=max(quantity,math.floor(position_cap/(asks[direction]*(1+market['fee_rate'])+.005)))
             cost = fill(books[market['tokens'][direction]], 'asks',quantity,market['fee_rate'])
             liquid = fill(books[market['tokens'][direction]], 'bids',quantity,market['fee_rate'])
             state=self.state(books)
             spent_today=sum(t['cost'] for t in state['trades'] if datetime.fromtimestamp(t['opened'],timezone.utc).date().isoformat()==day)
-            if (cost > 3 or cost > state['cash'] or spent_today+cost > 12 or state['lifetime_spend']+cost > 40
+            if (cost > position_cap or cost > state['cash'] or spent_today+cost > 12*risk_scale or
+                    (not self.paper['compound'] and state['lifetime_spend']+cost > self.paper['initial_cash'])
                     or liquid < .85*cost or any(t['closed'] is None for t in state['trades'])):
                 return 'budget, open exposure or entry cost guard'
             with self.db:
@@ -407,7 +414,9 @@ def report(engine, folder, health, books=None):
     state['trend_signal']=engine.last_signal
     if engine.strategy=='trend':
         state['strategy_rules']=dict(net_profit_target=.05,position_loss_trigger=.20,max_hold_seconds=120,
-                                     reentry_cooldown_seconds=20,max_entries_per_interval=4,daily_loss_pause=4)
+                                     reentry_cooldown_seconds=20,max_entries_per_interval=4,daily_loss_pause=4*paper_config.scale(engine.paper),
+                                     position_cap=3*paper_config.scale(engine.paper,state['realized_pnl']),
+                                     daily_purchase_cap=12*paper_config.scale(engine.paper,state['realized_pnl']))
     state.update(health,updated_utc=datetime.now(timezone.utc).isoformat(),mode='PAPER ONLY',
                  hypothesis='Experimental trend following; five-percent target is not guaranteed' if engine.strategy=='trend' else 'Unverified Robinhood lead; no assumed ten-second advantage',
                  samples=engine.db.execute('SELECT COUNT(*) FROM samples').fetchone()[0])
@@ -428,7 +437,7 @@ def report(engine, folder, health, books=None):
 
 def live(args):
     with watcher_lock(args.database):
-        engine=Engine(args.database,strategy=args.strategy)
+        engine=Engine(args.database,strategy=args.strategy,initial_cash=args.initial_cash,goal=args.goal,compound=args.compound)
         market=None
         with ThreadPoolExecutor(max_workers=4) as pool:
             while True:
@@ -501,10 +510,10 @@ def fake_books(now,up=.40,down=.60):
             for token,price in [('up',up),('down',down)]}
 
 
-def simulate_trend():
+def simulate_trend(initial_cash=40,goal=None,compound=False):
     scenarios=[]
     for name in ['profit_and_pullback_reentry','adverse_move','flat_no_trend']:
-        e=Engine(':memory:',strategy='trend');m=fake_market();decisions=[]
+        e=Engine(':memory:',strategy='trend',initial_cash=initial_cash,goal=goal,compound=compound);m=fake_market();decisions=[]
         for now in range(86):
             price=100000+now
             if name=='profit_and_pullback_reentry' and 56<=now<=62:
@@ -519,16 +528,16 @@ def simulate_trend():
             b=fake_books(now,up=up,down=1-up)
             decisions.append(e.tick(now,m,dict(price=price,timestamp=now,received=now),b))
         scenarios.append(dict(name=name,**e.state(b),decisions=decisions))
-    return dict(label='SYNTHETIC ONLY: invented trends and quotes; each scenario starts at $40. Not measured returns.',
+    return dict(label='SYNTHETIC ONLY: invented trends and quotes; each scenario starts at $%.2f. Not measured returns.'%initial_cash,
                 strategy=btc_trend.VERSION,scenarios=scenarios)
 
 
-def simulate(strategy='trend'):
+def simulate(strategy='trend',initial_cash=40,goal=None,compound=False):
     if strategy=='trend':
-        return simulate_trend()
+        return simulate_trend(initial_cash,goal,compound)
     scenarios=[]
     for name,exit_ask,signal_ask in [('lag_then_favorable',.47,.40),('lag_then_adverse',.36,.40),('odds_already_repriced',.47,.45)]:
-        e=Engine(':memory:',strategy='lead');m=fake_market();decisions=[]
+        e=Engine(':memory:',strategy='lead',initial_cash=initial_cash,goal=goal,compound=compound);m=fake_market();decisions=[]
         for now in range(12,36):
             price=100000 if now < 22 else 100050
             up=.40 if now < 22 else signal_ask if now < 33 else exit_ask
@@ -536,13 +545,16 @@ def simulate(strategy='trend'):
             decisions.append(e.tick(now,m,dict(price=price,timestamp=now,received=now),b))
         state=e.state(b)
         scenarios.append(dict(name=name,**state,decisions=decisions))
-    return {'label':'SYNTHETIC ONLY: invented quotes, not backtest/live returns. Each scenario starts at $40.',
+    return {'label':'SYNTHETIC ONLY: invented quotes, not backtest/live returns. Each scenario starts at $%.2f.'%initial_cash,
             'scenarios':scenarios}
 
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--database',default='btc15.sqlite3')
+    p.add_argument('--database',default=paper_config.active_database('btc'))
+    p.add_argument('--initial-cash',type=float)
+    p.add_argument('--goal',type=float)
+    p.add_argument('--compound',action='store_true',default=None)
     p.add_argument('--strategy',choices=['trend','lead'],default='trend')
     p.add_argument('--report-dir',default='reports/btc15')
     p.add_argument('--config',default=CONFIG)
@@ -572,7 +584,7 @@ def main():
         with os.fdopen(descriptor,'w') as handle: json.dump(data,handle)
         print('Saved locally. Background collector reloads configuration each cycle.')
     elif a.simulate:
-        print(json.dumps(without_quantities(simulate(a.strategy)),indent=2))
+        print(json.dumps(without_quantities(simulate(a.strategy,a.initial_cash or 40,a.goal,bool(a.compound))),indent=2))
     else:
         if not math.isfinite(a.poll) or a.poll < 1: p.error('poll must be at least one second')
         live(a)

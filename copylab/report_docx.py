@@ -83,6 +83,8 @@ def combined_body(document, report, output):
         label,dollars(total[key])) for label,key in [('Starting balances','initial_cash'),('Available cash','cash'),
         ('Estimated combined equity','equity'),('Total profit or loss','total_pnl'),('Realized profit or loss','realized_pnl'),
         ('Estimated open profit or loss','unrealized_pnl')]], [4.7,2.3])
+    if total.get('goal'):
+        document.add_paragraph('Combined target '+dollars(total['goal'])+'. Remaining to target '+dollars(total['remaining_to_goal'])+'. Targets are not forecasts or guaranteed returns.')
     document.add_paragraph(report['explanation'])
     document.add_paragraph('Results by bot','Heading 1')
     for bot in report['bots']:
@@ -93,6 +95,9 @@ def combined_body(document, report, output):
         document.add_paragraph('Entries: %d. Exits or settlements: %d. Last source update %s. %s%s' %
             (bot['entries'],bot['exits'],timestamp(bot['source_updated']),
              'Source status is stale or unavailable. ' if bot['stale'] else '',bot['status']))
+        if bot.get('goal'):
+            percent=bot.get('goal_progress_percent')
+            document.add_paragraph('Starting cash '+dollars(bot['initial_cash'])+' | Target '+dollars(bot['goal'])+' | Remaining '+dollars(bot['remaining_to_goal'])+' | Growth toward target '+('Unknown' if percent is None else '%.2f%%'%percent))
         if not bot['entries']:
             document.add_paragraph('No entries have been recorded for this bot.')
     opened=[(b,p) for b in report['bots'] for p in b['positions']]

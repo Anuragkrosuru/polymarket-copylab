@@ -1,6 +1,6 @@
 # Robinhood BTC trend paper experiment
 
-This is a separate $40 simulated account trading Polymarket's 15-minute BTC
+The active experiment starts with a separate $100 simulated account and tracks a $1,000 goal. It trades Polymarket's 15-minute BTC
 Up/Down markets. It follows short-term trends and seeks a five-percent net return
 on a position. It does not assume a ten-second Robinhood advantage or predict the
 final winning outcome. No Robinhood or Polymarket orders are submitted.
@@ -20,7 +20,7 @@ It confirms the same direction through all of these checks:
 
 These are experimental trend filters, not calibrated probabilities or evidence of
 positive expectancy. Polymarket odds no longer have to stay unchanged. The ask
-must be between $0.10 and $0.80 and the spread at most $0.03. The $3 position cap
+must be between $0.10 and $0.80 and the spread at most $0.03. The active $7.50 initial position cap
 and venue minimums can still prevent entry, especially on expensive outcomes.
 
 A candidate waits at least one second before a fill is simulated at NEW asks.
@@ -37,7 +37,7 @@ price increase may not cover fees and spreads. Actual simulated profit can excee
 the target when prices jump between observations.
 
 Other exit triggers are a 20% position loss, confirmed opposite trend, two-minute
-holding limit, or twenty seconds before the interval ends. The $4 daily equity-loss
+holding limit, or twenty seconds before the interval ends. The active $10 daily equity-loss
 pause also requests exits. Exit processing continues when Robinhood is unavailable.
 If bids cannot fill the whole position, it remains open and the request retries on
 later cycles; this prototype does not record partial exits. Missing valuations
@@ -53,9 +53,11 @@ pass. An opposite confirmed direction can enter after the cooldown without the
 same-direction pullback requirement.
 
 At most four entries per interval and one open position at a time are allowed.
-The $3 per-position, $12 UTC daily purchases, $40 lifetime purchases and $4 daily
-loss pause remain. Gross purchases still consume those caps even when trades are
-profitable, so this is a bounded experiment rather than unlimited reinvestment.
+The active run starts with $7.50 per-position and $30 UTC daily purchase caps,
+scaled using starting cash plus realized PnL. The daily loss pause is $10.
+Sale proceeds can be reinvested within available cash; there is no starting-cash
+lifetime purchase ceiling in this experiment. The earlier $40 ledgers retain
+their original settings. The $1,000 target is tracked, not assumed or guaranteed.
 Daily baselines, trades, pending signals and observations survive restarts.
 Existing legacy trades retain their old exit policy; migration preserves IDs and
 history while allowing multiple later trades in the same interval.
@@ -98,7 +100,9 @@ includes the signing dependency; other installations can use
 
 `python3 -m copylab.btc15` runs the default trend collector. `--once` performs one
 cycle, `--simulate` runs invented trend, profit-target, re-entry and loss examples
-through the same engine in fresh $40 accounts. `--strategy lead` retains the old
+through the same engine in fresh accounts. Pass `--initial-cash 100 --goal 1000
+--compound --simulate` for $100 scenarios, or run `python3 -m copylab.goal_simulation`
+for all three bots. The active database defaults come from `active-experiment.json`. `--strategy lead` retains the old
 three-basis-point latency experiment for comparison. Its rules require a move
 while odds stay unchanged and request an exit after ten seconds; that is no
 longer the default live policy.

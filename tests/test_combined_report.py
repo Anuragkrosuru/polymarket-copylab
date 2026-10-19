@@ -71,3 +71,19 @@ class CombinedReportTests(unittest.TestCase):
             self.assertFalse(r['bots'][1]['available'])
             self.assertEqual(r['trades'],[])
             self.assertFalse((Path(folder)/'arbitrage.sqlite3').exists())
+
+    def test_three_funded_100_accounts_have_300_start_and_3000_goal(self):
+        from copylab.arbitrage import Account
+        from copylab.btc15 import Engine
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);directory=root/'reports';directory.mkdir()
+            ledger=Ledger(str(root/'paper.sqlite3'),initial_cash=100,goal=1000,compound=True)
+            Account(str(root/'arbitrage.sqlite3'),initial_cash=100,goal=1000,compound=True).db.close()
+            Engine(str(root/'btc15.sqlite3'),initial_cash=100,goal=1000,compound=True).db.close()
+            r=combine(collect(ledger),root,directory,1700000000)
+            self.assertEqual(r['combined']['initial_cash'],300)
+            self.assertEqual(r['combined']['equity'],300)
+            self.assertEqual(r['combined']['goal'],3000)
+            self.assertEqual(r['combined']['remaining_to_goal'],2700)
+            self.assertTrue(all(b['goal']==1000 for b in r['bots']))
+            ledger.db.close()

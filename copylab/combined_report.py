@@ -5,6 +5,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
+from copylab import paper_config
 
 
 def finite(value):
@@ -30,6 +31,12 @@ def rows(path, table):
         connection.close()
 
 
+def funding(path):
+    connection=sqlite3.connect('file:'+quote(str(path.resolve()))+'?mode=ro',uri=True,timeout=5)
+    try:return paper_config.settings(connection)
+    finally:connection.close()
+
+
 def event(bot, key, kind, at, market, outcome, cost, cash, price=None, realized=None, **extra):
     return dict(bot=bot,event_id=key,type=kind,timestamp=at,market=market,outcome=outcome,
                 cost_basis=cost,cash_change=cash,price=price,realized_pnl=realized,
@@ -37,7 +44,7 @@ def event(bot, key, kind, at, market, outcome, cost, cash, price=None, realized=
 
 
 def unavailable(name,error):
-    return dict(name=name,available=False,initial_cash=40,cash=None,equity=None,total_pnl=None,
+    return dict(name=name,available=False,initial_cash=None,cash=None,equity=None,total_pnl=None,
                 realized_pnl=None,unrealized_pnl=None,positions=[],entries=0,exits=0,
                 status='Data unavailable: '+error,source_updated=None,stale=True),[]
 
@@ -46,9 +53,11 @@ def btc(root, directory, now):
     name='BTC trend bot'
     try:
         trades=rows(root/'btc15.sqlite3','trades')
+        config=funding(root/'btc15.sqlite3')
+        initial=config['initial_cash']
         snapshot,checked,fresh=status(directory/'btc15'/'status.json',now)
         spent=sum(t['cost'] for t in trades)
-        cash=40-spent+sum(t['proceeds'] or 0 for t in trades)
+        cash=initial-spent+sum(t['proceeds'] or 0 for t in trades)
         realized=sum(t['proceeds']-t['cost'] for t in trades if t['closed'] is not None)
         opened=[t for t in trades if t['closed'] is None]
         snapshot_ids={t['id'] for t in snapshot.get('trades',[]) if t['closed'] is None}
@@ -70,8 +79,8 @@ def btc(root, directory, now):
                 positions.append(dict(title=title,outcome=outcome,price=price,cost=t['cost'],value=value,
                                       pnl=None if value is None else value-t['cost'],
                                       target_proceeds=t['cost']*1.05 if t.get('strategy')=='trend' else None))
-        return dict(name=name,available=True,initial_cash=40,cash=cash,equity=equity,
-                    total_pnl=None if equity is None else equity-40,realized_pnl=realized,
+        return dict(**paper_config.progress(config,equity),name=name,available=True,initial_cash=initial,cash=cash,equity=equity,
+                    total_pnl=None if equity is None else equity-initial,realized_pnl=realized,
                     unrealized_pnl=None if equity is None else equity-cash-sum(t['cost'] for t in opened),
                     positions=positions,entries=len(trades),exits=len(trades)-len(opened),
                     status=snapshot.get('decision','No status available'),source_updated=checked,stale=not fresh),events
@@ -83,8 +92,10 @@ def arbitrage(root, directory, now):
     name='Arbitrage bot'
     try:
         trades=rows(root/'arbitrage.sqlite3','pairs')
+        config=funding(root/'arbitrage.sqlite3')
+        initial=config['initial_cash']
         snapshot,checked,fresh=status(directory/'arbitrage'/'status.json',now)
-        cash=40;realized=0;expected=0;positions=[];events=[]
+        cash=initial;realized=0;expected=0;positions=[];events=[]
         for t in trades:
             market=json.loads(t['market']);q=json.loads(t['quote']);cost=q['cost'];cash-=cost
             prices=q.get('entry_prices') or [c/1.1/q['shares_each'] for c in q['leg_costs']]
@@ -101,8 +112,8 @@ def arbitrage(root, directory, now):
                 positions.append(dict(title=market['question'],outcome='Complete pair',cost=cost,value=None,pnl=None,
                                       expected_payout=q['expected_payout'],expected_gain=q['expected_gain']))
         equity=None if positions else cash
-        return dict(name=name,available=True,initial_cash=40,cash=cash,equity=equity,
-                    total_pnl=None if equity is None else equity-40,realized_pnl=realized,
+        return dict(**paper_config.progress(config,equity),name=name,available=True,initial_cash=initial,cash=cash,equity=equity,
+                    total_pnl=None if equity is None else equity-initial,realized_pnl=realized,
                     unrealized_pnl=None if positions else 0,expected_open_gain=expected,
                     positions=positions,entries=len(trades),exits=sum(t['payout'] is not None for t in trades),
                     status='%s/%s markets checked in latest sweep; %s errors' % (snapshot.get('checked','?'),snapshot.get('universe','?'),snapshot.get('errors','?')),
@@ -114,7 +125,7 @@ def arbitrage(root, directory, now):
 def combine(report, root, directory, now):
     from copylab.report import timestamp
     copy=report['account']
-    bot=dict(name='Copy bot',available=True,initial_cash=40,positions=copy['positions'],
+    bot=dict(**paper_config.progress(dict(initial_cash=copy['initial_cash'],goal=copy.get('goal'),compound=copy.get('compound',False)),copy['equity']),name='Copy bot',available=True,initial_cash=copy['initial_cash'],positions=copy['positions'],
              entries=copy['fills'],exits=copy['sales']+copy['settled_positions'],
              status='Copies screened traders with relative commitment sizing',source_updated=copy.get('last_refresh'),
              stale=bool(copy['unpriced_positions']))
@@ -129,7 +140,11 @@ def combine(report, root, directory, now):
     report['combined']={key:total(key) for key in ('initial_cash','cash','equity','total_pnl','realized_pnl','unrealized_pnl')}
     report['combined']['expected_arbitrage_gain']=bots[1].get('expected_open_gain')
     report['bots']=bots
-    report['scope']='Three independent live paper accounts starting at $40 each ($120 combined). Synthetic scenarios excluded.'
+    goals=[b.get('goal') for b in bots]
+    combined_goal=sum(goals) if all(finite(g) for g in goals) else None
+    report['combined'].update(paper_config.progress(dict(initial_cash=report['combined']['initial_cash'],goal=combined_goal,compound=all(b.get('compound',False) for b in bots)),report['combined']['equity']))
+    start=report['combined']['initial_cash']
+    report['scope']='Three independent live paper accounts; combined starting balance '+('$%.2f'%start if start is not None else 'Unknown')+'. Synthetic scenarios excluded.'
     report['explanation']=('Balances are independent and collected at different times. Open values are bid estimates, not realized gains. '
                            'Arbitrage expected payouts are not current equity. Unknown valuations make combined equity/PnL unknown. '
                            'Copy prices exclude fixed reserves; BTC prices include modeled entry costs or subtract exit costs. No real orders.')
@@ -154,7 +169,11 @@ def markdown(report):
            'Combined cash: '+dollars(c['cash']),'Combined equity: '+dollars(c['equity']),
            'Combined total P/L: '+dollars(c['total_pnl']),'Combined realized P/L: '+dollars(c['realized_pnl']),
            'Combined estimated open P/L: '+dollars(c['unrealized_pnl']),'',report['explanation'],'']
+    if c.get('goal'):
+        lines+=['Combined goal '+dollars(c['goal'])+' | Remaining '+dollars(c['remaining_to_goal']), 'The goal is a target, not a forecast or guaranteed result.','']
     for b in report['bots']:
+        if b.get('goal'):
+            lines+=['Goal for '+b['name']+': '+dollars(b['goal'])+' | Remaining '+dollars(b['remaining_to_goal'])]
         lines += ['## '+b['name'],'','Cash '+dollars(b['cash'])+' | Equity '+dollars(b['equity'])+' | Total P/L '+dollars(b['total_pnl']),
                   'Realized P/L '+dollars(b['realized_pnl'])+' | Estimated open P/L '+dollars(b['unrealized_pnl']),
                   '%d entries | %d exits/settlements'%(b['entries'],b['exits']),

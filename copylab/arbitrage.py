@@ -14,6 +14,7 @@ from urllib.error import HTTPError
 from copylab.__main__ import get
 from copylab.runtime import watcher_lock
 from copylab.presentation import without_quantities
+from copylab import paper_config
 
 # Legacy synthetic scenarios use this reserve; live scans require published fees.
 FEE_RESERVE = 0.10
@@ -44,7 +45,7 @@ def quote(market, books, budget=6, require_edge=True):
             not market.get('accepting_orders') or market.get('neg_risk') or
             len(tokens) != 2 or len({t['token_id'] for t in tokens}) != 2):
         raise ValueError('Not an eligible ordinary binary market')
-    quantity = max(5.0, float(market.get('minimum_order_size', 5)))
+    quantity = max(5.0, float(market.get('minimum_order_size', 5)),math.floor(budget*.95))
     if not math.isfinite(quantity) or quantity <= 0:
         raise ValueError('Invalid minimum size')
     costs = []
@@ -93,8 +94,9 @@ def quote(market, books, budget=6, require_edge=True):
 
 
 class Account:
-    def __init__(self, path):
+    def __init__(self, path, initial_cash=None, goal=None, compound=None):
         self.db = sqlite3.connect(path)
+        self.paper=paper_config.initialize(self.db,initial_cash,goal,compound)
         self.db.execute('CREATE TABLE IF NOT EXISTS pairs(condition TEXT PRIMARY KEY, opened REAL, market TEXT, quote TEXT, payout REAL)')
 
     def state(self):
@@ -102,7 +104,9 @@ class Account:
         trades = [dict(condition=c, opened=t, market=json.loads(m), **json.loads(q), payout=p) for c,t,m,q,p in rows]
         spent = sum(t['cost'] for t in trades)
         paid = sum(t['payout'] or 0 for t in trades)
-        return {'initial_cash': 40, 'cash': 40-spent+paid, 'lifetime_spend': spent,
+        cash=self.paper['initial_cash']-spent+paid
+        return {**paper_config.progress(self.paper,None if any(t['payout'] is None for t in trades) else cash),
+                'initial_cash': self.paper['initial_cash'], 'cash': cash, 'lifetime_spend': spent,
                 'realized_pnl': sum(t['payout']-t['cost'] for t in trades if t['payout'] is not None),
                 'open_expected_gain': sum(t['expected_gain'] for t in trades if t['payout'] is None),
                 'trades': trades}
@@ -112,8 +116,10 @@ class Account:
         state = self.state()
         day = datetime.fromtimestamp(now, timezone.utc).date()
         daily = sum(t['cost'] for t in state['trades'] if datetime.fromtimestamp(t['opened'], timezone.utc).date() == day)
-        if (proposed['cost'] > 6 or proposed['cost'] > state['cash'] or
-                state['lifetime_spend']+proposed['cost'] > 40 or daily+proposed['cost'] > 12):
+        risk_scale=paper_config.scale(self.paper,state['realized_pnl'])
+        if (proposed['cost'] > 6*risk_scale or proposed['cost'] > state['cash'] or
+                (not self.paper['compound'] and state['lifetime_spend']+proposed['cost'] > self.paper['initial_cash'])
+                or daily+proposed['cost'] > 12*risk_scale):
             return False
         with self.db:
             result = self.db.execute('INSERT OR IGNORE INTO pairs VALUES (?,?,?,?,NULL)',
@@ -207,6 +213,8 @@ def scan(account, conditions, progress=None):
                 account.settle(t['condition'], get('https://clob.polymarket.com/markets/'+t['condition']))
             except Exception:
                 health['errors'] += 1
+    state=account.state()
+    pair_budget=min(state['cash'],6*paper_config.scale(account.paper,state['realized_pnl']))
     def inspect(condition):
         market = get('https://clob.polymarket.com/markets/'+condition)
         if market.get('condition_id') != condition:
@@ -214,7 +222,7 @@ def scan(account, conditions, progress=None):
         if condition not in FEE_SCHEDULES:
             raise ValueError('Unknown published fees; skip')
         market['paper_fee_rate'] = FEE_SCHEDULES[condition]
-        first = quote(market, books_for(market), require_edge=False)
+        first = quote(market, books_for(market),budget=pair_budget,require_edge=False)
         return market, first
 
     pending = [c for c in conditions if not account.db.execute('SELECT 1 FROM pairs WHERE condition=?',(c,)).fetchone()]
@@ -232,7 +240,7 @@ def scan(account, conditions, progress=None):
                 if first['expected_gain'] < max(.02,first['cost']*.01):
                     raise ValueError('No edge after published fees and buffer')
                 # Refresh BOTH legs again on the main thread immediately before entry.
-                second = quote(market, books_for(market))
+                second = quote(market, books_for(market),budget=pair_budget)
                 if second['cost'] > first['cost'] + .001:
                     raise ValueError('Quote deteriorated on recheck')
                 health['entered'] += int(account.enter(market, second))
@@ -269,7 +277,10 @@ def scenarios():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--database', default='arbitrage.sqlite3')
+    parser.add_argument('--database', default=paper_config.active_database('arbitrage'))
+    parser.add_argument('--initial-cash',type=float)
+    parser.add_argument('--goal',type=float)
+    parser.add_argument('--compound',action='store_true',default=None)
     parser.add_argument('--report-dir', default='reports/arbitrage')
     parser.add_argument('--limit', type=int, default=100)
     parser.add_argument('--poll', type=float, default=10)
@@ -282,7 +293,7 @@ def main():
     if not 1 <= args.limit <= 100 or args.poll < 5:
         parser.error('limit must be 1–100; poll at least 5 seconds')
     with watcher_lock(args.database):
-        account = Account(args.database)
+        account = Account(args.database,args.initial_cash,args.goal,args.compound)
         conditions, discovered = [], 0
         while True:
             started = time.monotonic()

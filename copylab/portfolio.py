@@ -120,7 +120,8 @@ def summary(ledger, now=None):
         'SELECT COALESCE(SUM(payout),0), COALESCE(SUM(cost),0) FROM settlements').fetchone()
     sale_proceeds, sale_cost = ledger.db.execute(
         'SELECT COALESCE(SUM(proceeds),0), COALESCE(SUM(cost),0) FROM exits').fetchone()
-    cash = 40 - ledger.spend() + payout + sale_proceeds
+    initial=ledger.paper['initial_cash']
+    cash = initial - ledger.spend() + payout + sale_proceeds
     positions, missing, value = [], 0, 0.0
     for asset, shares, cost, source in open_positions(ledger.db):
         mark = ledger.db.execute('SELECT value, checked, note, shares, cost FROM marks WHERE asset=?', (asset,)).fetchone()
@@ -142,14 +143,15 @@ def summary(ledger, now=None):
     monitor = ledger.db.execute('SELECT targets FROM monitor WHERE id=1').fetchone()
     targets = json.loads(monitor[0]) if monitor else None
     polling = ledger.db.execute('SELECT checked,target_seconds,observed_seconds,work_seconds FROM polling WHERE id=1').fetchone()
-    return dict(mode='SIMULATION', cash=cash, initial_cash=40, open_cost=open_cost,
+    from copylab.paper_config import progress
+    return dict(**progress(ledger.paper,cash+value if not missing else None),mode='SIMULATION', cash=cash, initial_cash=initial, open_cost=open_cost,
                 open_value=value if not missing else None, realized_pnl=payout-settled_cost+sale_proceeds-sale_cost,
                 sale_pnl=sale_proceeds-sale_cost, settlement_pnl=payout-settled_cost,
                 pending_exit_requests=ledger.db.execute('SELECT COUNT(DISTINCT id) FROM pending_exits WHERE expires>=?',(now,)).fetchone()[0],
                 sales=ledger.db.execute('SELECT COUNT(DISTINCT id) FROM exits').fetchone()[0],
                 unrealized_pnl=value-open_cost if not missing else None,
                 equity=cash+value if not missing else None,
-                total_pnl=cash+value-40 if not missing else None,
+                total_pnl=cash+value-initial if not missing else None,
                 fills=ledger.db.execute('SELECT COUNT(*) FROM fills').fetchone()[0],
                 settled_positions=ledger.db.execute('SELECT COUNT(*) FROM settlements').fetchone()[0],
                 unpriced_positions=missing, positions=positions,

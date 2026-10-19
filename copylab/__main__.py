@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 from copylab.portfolio import initialize, refresh, summary, display, open_lots
-from copylab import runtime, sizing
+from copylab import runtime, sizing, paper_config
 from copylab.execution import POLICY_VERSION, levels, entry_quality, bid_fingerprint, audit
 
 
@@ -44,8 +44,9 @@ def legacy_id(trade):
 
 
 class Ledger:
-    def __init__(self, path):
+    def __init__(self, path, initial_cash=None, goal=None, compound=None):
         self.db = sqlite3.connect(path, timeout=30)
+        self.paper=paper_config.initialize(self.db,initial_cash,goal,compound)
         self.db.executescript('''
         CREATE TABLE IF NOT EXISTS seen(id TEXT PRIMARY KEY);
         CREATE TABLE IF NOT EXISTS wallets(wallet TEXT PRIMARY KEY, started REAL);
@@ -88,20 +89,22 @@ class Ledger:
                 return 'already settled'
             if trade['side'] == 'SELL':
                 return self.sell(trade, book, now, key)
-            budget = min(min(2, max_cost) - self.spend('WHERE asset=?', (asset,)),
-                         40 - self.spend())
+            account=summary(self,now)
+            risk_scale=paper_config.scale(self.paper,account['realized_pnl'])
+            available=account['cash'] if self.paper['compound'] else self.paper['initial_cash']-self.spend()
+            budget = min(min(2*risk_scale, max_cost) - self.spend('WHERE asset=?', (asset,)), available)
             condition = trade.get('conditionId')
             if condition:
                 market_spend = sum(cost for cost,source in self.db.execute('SELECT cost,source FROM fills')
                                    if json.loads(source).get('conditionId') == condition)
-                budget = min(budget, 2-market_spend)
+                budget = min(budget, 2*risk_scale-market_spend)
             if copy_group == 'experimental':
                 source_wallet = trade.get('proxyWallet','').lower()
                 today = [(cost,json.loads(source)) for cost,source in self.db.execute(
                     'SELECT cost,source FROM fills WHERE day=?',(day,))]
                 group_spend = sum(cost for cost,source in today if source.get('copy_group')=='experimental')
                 wallet_spend = sum(cost for cost,source in today if source.get('proxyWallet','').lower()==source_wallet)
-                budget = min(budget, 2-group_spend, 1-wallet_spend)
+                budget = min(budget, 2*risk_scale-group_spend, risk_scale-wallet_spend)
             if budget < 0.01:
                 return 'risk limit'
             ask_levels = levels(book, 'asks')
@@ -287,7 +290,10 @@ def scan(ledger, wallet, fetch=None, clock=None, allow_buys=True, max_cost=2, co
 
 def main():
     parser = argparse.ArgumentParser(description='CopyLab — simulated money only')
-    parser.add_argument('--db', default='paper.sqlite3')
+    parser.add_argument('--db', default=paper_config.active_database('copy'))
+    parser.add_argument('--initial-cash',type=float)
+    parser.add_argument('--goal',type=float)
+    parser.add_argument('--compound',action='store_true',default=None)
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('leaderboard')
     discovery = sub.add_parser('discover', help='Screen broad leaderboards and publish a dynamic watchlist')
@@ -344,7 +350,7 @@ def main():
                 break
             time.sleep(policy['refresh_seconds'])
         return
-    ledger = Ledger(args.db)
+    ledger = Ledger(args.db,args.initial_cash,args.goal,args.compound)
     if args.command == 'report':
         from copylab.report import export
         export(ledger, args.output_dir, args.docx_python)
@@ -408,7 +414,7 @@ def main():
                     print('Wallet feed failed:', wallet, error, flush=True)
                     continue
                 try:
-                    scan(ledger, wallet, allow_buys=target['allow_buys'], max_cost=target['max_cost'], copy_group=target['classification'], prefetched=trades)
+                    scan(ledger, wallet, allow_buys=target['allow_buys'], max_cost=target['max_cost']*paper_config.scale(ledger.paper,summary(ledger)['realized_pnl']), copy_group=target['classification'], prefetched=trades)
                 except (OSError, ValueError, KeyError, TypeError) as error:
                     runtime.scan_result(ledger, wallet, error=str(error))
                     print('Wallet scan failed:', str(error), flush=True)

@@ -10,3 +10,4 @@ __pycache__/
 live-report.json
 *.pid
 reports/
+experiments/

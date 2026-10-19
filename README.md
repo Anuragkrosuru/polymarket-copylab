@@ -1,5 +1,11 @@
 # Polymarket CopyLab
 
+The active experiment now starts each bot at **$100**, with a **$1,000 target per bot**.
+It uses fresh ledgers selected by `active-experiment.json`, supports reinvesting
+available cash, and keeps the older $40 ledger files separate. The $1,000 target
+is not a forecast or a promised outcome. See the active experiment section below.
+
+
 A Python 3.9+ paper copy-trading bot for Mac, Windows, and later cloud hosting. No dependencies, credentials, or real order placement.
 
 ## Run
@@ -286,3 +292,41 @@ recorded timestamp are labeled as such rather than assigned an invented time.
 Other bot databases are opened read-only; report export never creates or migrates
 them or changes trading rules. The JSON keeps `account` as the legacy copy-account
 field and adds `bots` and `combined`; its `trades` list and CSV now cover all bots.
+
+### Active $100 to $1,000 experiment
+
+The three active ledgers are in `experiments/100-to-1000/`. Starting balances are
+$100 each ($300 combined), with $1,000 goals each ($3,000 combined). The original
+$40 database files stay separate; no archive is created. The combined report
+shows each target, remaining dollar gap and percentage of required growth achieved.
+Unknown equity produces unknown goal progress. Goal achievement is tracked rather
+than assumed; it does not guarantee a price, timeline or automatic liquidation.
+
+Paper funding, target and reinvestment policy are persisted in each ledger. A
+funded ledger cannot be rebased by changing CLI arguments. For a different new
+experiment choose a new database and pass `--initial-cash`, `--goal`, `--compound`.
+The active manifest sets default database paths for copy, arbitrage and BTC CLIs.
+
+The active runs may reuse sale/settlement proceeds; gross lifetime spending is no
+longer capped at starting cash. Available cash still limits every purchase.
+Position and daily purchase caps scale from starting cash plus realized PnL,
+excluding unrealized winning estimates. At $100 initial capital:
+
+- Copy: up to $5 per market; normal relative sizing targets $2.50 and smaller
+  fallback $1.25. No global daily purchase cap. Experimental group/wallet daily
+  limits begin at $5/$2.50. Minimum venue sizes can still prevent small entries.
+- Arbitrage: up to $15 per pair and $30 daily purchases. Fee/depth/edge checks
+  remain; buying both outcomes does not make sequential execution risk-free.
+- BTC trend: up to $7.50 per position and $30 daily purchases, a $10 daily loss
+  pause, 5% net profit target and 20% position loss trigger. Re-entry and freshness
+  checks remain. Prices can jump beyond exit triggers.
+
+The fixed daily BTC loss pause scales with starting capital. Purchase caps may
+expand after realized gains or shrink after realized losses. No borrowing or
+leverage is simulated. Old $40 assumptions elsewhere document the earlier run.
+
+`python3 -m copylab.goal_simulation` writes clearly labeled invented $100 examples
+for all three engines to `goal-simulation-results.json`. They test accounting and
+include losses and rejected trades; they are not backtests, independent return
+estimates or trajectories manufactured to hit $1,000. Live results appear only
+in the active ledgers and `reports/`.

@@ -1,0 +1,11 @@
+{
+  "name": "100-to-1000",
+  "initial_cash_per_bot": 100,
+  "goal_per_bot": 1000,
+  "compound": true,
+  "databases": {
+    "copy": "experiments/100-to-1000/paper.sqlite3",
+    "arbitrage": "experiments/100-to-1000/arbitrage.sqlite3",
+    "btc": "experiments/100-to-1000/btc15.sqlite3"
+  }
+}
