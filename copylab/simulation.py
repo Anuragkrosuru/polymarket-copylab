@@ -38,12 +38,12 @@ def scenario(name, sell_prices, winners):
         with redirect_stdout(StringIO()):
             scan(ledger, WALLET, fetch, lambda: now[0])
             now[0] += 1
-            for i in range(5):
+            for i in range(4):
                 trades.append(dict(transactionHash=f'buy-{i}', proxyWallet=WALLET,
                     timestamp=now[0], side='BUY', price=.5, size=100, asset=str(i),
                     conditionId=f'condition-{i}', title=f'Synthetic market {i+1}', outcome='Yes'))
             scan(ledger, WALLET, fetch, lambda: now[0])
-            snapshots = [report('4 buys; fifth blocked by daily spending cap')]
+            snapshots = [report('4 constructed buys; no global daily spending cap')]
             # Repeating the same feed must not add fills.
             scan(ledger, WALLET, fetch, lambda: now[0])
             assert summary(ledger, now[0])['fills'] == 4
@@ -79,7 +79,7 @@ def run(output):
     result = dict(kind='SYNTHETIC_INTEGRATION_TEST',
                   generated=datetime.now(timezone.utc).isoformat(),
                   disclaimer='Invented prices and outcomes. Tests software behavior; does not measure or predict trading profitability.',
-                  assumptions=dict(initial_cash=40, buy_cost=2, daily_spend_cap=8,
+                  assumptions=dict(initial_cash=40, buy_cost=2, daily_spend_cap=None,
                                    entry_reserve=.02, exit_reserve=.02, source_entry_price=.5,
                                    policy='Source SELL requests full exit of matching copied holdings.'),
                   scenarios=scenarios)

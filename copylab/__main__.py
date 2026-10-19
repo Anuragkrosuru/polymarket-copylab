@@ -88,7 +88,7 @@ class Ledger:
             if trade['side'] == 'SELL':
                 return self.sell(trade, book, now, key)
             budget = min(min(2, max_cost) - self.spend('WHERE asset=?', (asset,)),
-                         8 - self.spend('WHERE day=?', (day,)), 40 - self.spend())
+                         40 - self.spend())
             condition = trade.get('conditionId')
             if condition:
                 market_spend = sum(cost for cost,source in self.db.execute('SELECT cost,source FROM fills')

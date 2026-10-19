@@ -19,7 +19,7 @@ Leaderboard rankings are research candidates, not verified profitable strategies
 ## Simulation rules
 
 - $40 initial simulated cash; $2 maximum cumulative cost per market across all wallets and both outcomes, with a $2 per-outcome cap as well.
-- $8 maximum spending per UTC day. This is a spending cap, not a daily loss calculation.
+- No global daily purchase cap. The $40 lifetime purchase cap still applies.
 - New BUY and SELL activity only, maximum age 120 seconds; startup history is skipped.
 - Enforces the order book minimum share size for buys and exits; a $2 budget may be too small for many markets.
 - Copies only at asking prices no more than the smaller of 5% or 0.02 above the source price; walks visible ask depth and allows partial simulated fills.
@@ -130,7 +130,7 @@ Main screening defaults:
 - Largest winning market at most 50% of gross positive market P/L; profit factor at least 1.2.
 - A source trade observed within the past 24 hours.
 
-The bot can select up to 40 main wallets and 2 experimental wallets. Among wallets that pass the same screens, those with a source trade in the past hour are prioritized before the sample score. Experimental candidates need at least 10 trade transactions, 3 closed markets, and 2 trading days, but can have profit concentrated in one winner. Their copied position cap is $1, with a $1 daily cap per experimental wallet and a $2 daily cap for the whole experimental group. The $2 main position limit, $8 daily spending cap, and $40 cumulative purchase cap remain. Multiple wallets cannot increase cumulative spending in the same market above $2 by choosing different outcomes. The ranking is a transparent heuristic based on sample size and spread of results, not a prediction of profit or a verified risk classification.
+The bot can select up to 40 main wallets and 2 experimental wallets. Among wallets that pass the same screens, those with a source trade in the past hour are prioritized before the sample score. Experimental candidates need at least 10 trade transactions, 3 closed markets, and 2 trading days, but can have profit concentrated in one winner. Their copied position cap is $1, with a $1 daily cap per experimental wallet and a $2 daily cap for the whole experimental group. The $2 main position limit and $40 cumulative purchase cap remain. There is no global daily purchase cap. Multiple wallets cannot increase cumulative spending in the same market above $2 by choosing different outcomes. The ranking is a transparent heuristic based on sample size and spread of results, not a prediction of profit or a verified risk classification.
 
 `reports/trader-screening.csv` lists every assessed wallet, observed counts, sampled profit, largest-winner dependence, capped history, classification, and exclusion reasons. `reports/trader-screening.json` retains detailed coverage and policy. The Word report adds the selection rules and selected traders. An empty selection pauses screened buys; it never silently weakens the criteria.
 
@@ -140,7 +140,7 @@ Current limitations: closed-history samples may omit losses outside the fetched 
 
 Public endpoint reference for the realized P/L field: https://docs.polymarket.com/api-reference/core/get-closed-positions-for-a-user
 
-Entry controls limit price deterioration relative to the source trade as well as in cents. For example, a source entry at 3.3 cents cannot be copied at 4.7 cents. No minimum trading frequency is enforced: a wider watchlist creates more opportunities to inspect, while the budget, minimum market share sizes, freshness rules, and entry price checks still determine whether a simulated buy is made. Several positions may be open simultaneously; $8 daily spending permits four full $2 entries, or more smaller entries when minimum sizes allow.
+Entry controls limit price deterioration relative to the source trade as well as in cents. For example, a source entry at 3.3 cents cannot be copied at 4.7 cents. No minimum trading frequency is enforced: a wider watchlist creates more opportunities to inspect, while the budget, minimum market share sizes, freshness rules, and entry price checks still determine whether a simulated buy is made. Several positions may be open simultaneously, subject to the $40 lifetime purchase cap and the per-market and experimental-group limits.
 
 ## Faster wallet monitoring
 

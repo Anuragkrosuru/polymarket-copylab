@@ -15,10 +15,10 @@ class RiskTests(unittest.TestCase):
         self.assertEqual('risk limit', self.ledger.process(dict(self.trade, timestamp=self.now+1), self.book, self.now+1))
         self.assertAlmostEqual(2, self.ledger.spend())
 
-    def test_daily_budget(self):
+    def test_no_global_daily_purchase_cap(self):
         for asset in range(5):
             self.ledger.process(dict(self.trade, asset=str(asset)), self.book, self.now)
-        self.assertAlmostEqual(8, self.ledger.spend())
+        self.assertAlmostEqual(10, self.ledger.spend())
 
     def test_stale_and_chasing(self):
         self.assertEqual('old trade or unsupported side', self.ledger.process(self.trade, self.book, self.now+121))
@@ -48,13 +48,13 @@ class RiskTests(unittest.TestCase):
         for i in range(5):
             trade=dict(self.trade,asset=str(i),conditionId=str(i))
             self.ledger.process(trade,self.book,self.now)
-        self.assertEqual(4,len(open_positions(self.ledger.db)))
-        self.assertAlmostEqual(8,self.ledger.spend())
+        self.assertEqual(5,len(open_positions(self.ledger.db)))
+        self.assertAlmostEqual(10,self.ledger.spend())
 
     def test_total_cash_cap(self):
-        for day in range(6):
+        for day in range(1):
             now = self.now + day * 86400
-            for asset in range(5):
+            for asset in range(21):
                 self.ledger.process(dict(self.trade, timestamp=now, asset=f'{day}-{asset}'), self.book, now)
         self.assertAlmostEqual(40, self.ledger.spend())
 
