@@ -95,3 +95,12 @@ while the process runs; no automatic historical-data deletion occurs.
 - [Polymarket fees](https://docs.polymarket.com/trading/fees): taker formula and
   precision. [Real-time data](https://docs.polymarket.com/market-data/realtime-data)
   documents streaming options for a later measured latency improvement.
+
+## Filter diagnostics
+
+The status report refreshes counterfactual filter counts every 30 seconds over the
+latest 1,800 valid-book observations. It compares 1, 2 and 3 basis-point movement
+thresholds without changing the live three-basis-point strategy or creating trades.
+It reports passes through movement, unchanged odds, and spread/price/time checks.
+Counts overlap in time and exclude execution-delay, depth/minimum-size and account
+checks. These are filter diagnostics, not an estimated win rate or return.

@@ -1,5 +1,6 @@
 """Robinhood lead hypothesis, paper-only BTC 15-minute market experiment."""
 import argparse
+import bisect
 import base64
 import csv
 import getpass
@@ -230,7 +231,7 @@ class Engine:
         with self.db:
             self.db.execute('INSERT INTO samples(received,condition,rh,upask,downask,payload) VALUES (?,?,?,?,?,?)',
                             (now,market['condition'], rh['price'] if fresh else None,*asks,
-                             json.dumps({'rh':rh,'books':books})))
+                             json.dumps({'rh':rh,'books':books,'tokens':market['tokens']})))
         state = self.state(books)
         day = datetime.fromtimestamp(now, timezone.utc).date().isoformat()
         baseline = self.db.execute('SELECT baseline,halted FROM days WHERE day=?',(day,)).fetchone()
@@ -296,12 +297,57 @@ def atomic(path, text):
     temp.replace(path)
 
 
+def signal_diagnostics(engine):
+    """Counterfactual filter counts only; does not execute or claim returns."""
+    rows=engine.db.execute('SELECT received,condition,rh,upask,downask,payload FROM samples ORDER BY id DESC LIMIT 1800').fetchall()[::-1]
+    history={}
+    counts={str(t):dict(move_pass=0,unchanged_odds_pass=0,spread_price_window_pass=0) for t in (1,2,3)}
+    maximum=0.;comparisons=0
+    for now,condition,price,up,down,raw in rows:
+        if price is None:
+            continue
+        times,values=history.setdefault(condition,([],[]))
+        i=bisect.bisect_left(times,now-10)
+        options=[r for r in values[max(0,i-1):i+1] if 8 <= now-r[0] <= 12]
+        if options:
+            prior=min(options,key=lambda r:abs(r[0]-(now-10)))
+            move=(price/prior[1]-1)*10000
+            maximum=max(maximum,abs(move));comparisons+=1
+            direction=0 if move>0 else 1
+            ask=(up,down)[direction]
+            lag=abs(ask-prior[2+direction]) <= .01+1e-9
+            payload=None
+            for threshold in (1,2,3):
+                if abs(move)+1e-9 < threshold:
+                    continue
+                count=counts[str(threshold)];count['move_pass']+=1
+                if not lag:
+                    continue
+                count['unchanged_odds_pass']+=1
+                payload=payload or json.loads(raw)
+                tokens=payload.get('tokens',list(payload['books'])[:2])
+                book=payload['books'][tokens[direction]]
+                start=int(now)//900*900
+                bid=max(number(r['price']) for r in book['bids'])
+                if .10 <= ask <= .65 and ask-bid <= .03 and start+12 <= now <= start+870:
+                    count['spread_price_window_pass']+=1
+        times.append(now);values.append((now,price,up,down))
+    return dict(observations=len(rows),fresh_robinhood_observations=sum(r[2] is not None for r in rows),
+                comparisons=comparisons,largest_ten_second_move_bps=maximum,
+                thresholds_bps=counts,
+                note='Overlapping observations, not independent trades. Shadow filter counts only; exclude delayed-fill, minimum-size and budget checks. No strategy thresholds changed.')
+
+
 def report(engine, folder, health, books=None):
     folder=Path(folder);folder.mkdir(parents=True,exist_ok=True)
     state=engine.state(books)
     for t in state['trades']:
         t['entry_price_including_costs'] = t['cost']/t['shares']
         t['exit_price_after_costs'] = None if t['proceeds'] is None else t['proceeds']/t['shares']
+    if time.monotonic()-getattr(engine,'diagnostics_at',-100) >= 30:
+        engine.cached_diagnostics=signal_diagnostics(engine)
+        engine.diagnostics_at=time.monotonic()
+    state['signal_diagnostics']=engine.cached_diagnostics
     state.update(health,updated_utc=datetime.now(timezone.utc).isoformat(),mode='PAPER ONLY',
                  hypothesis='Unverified Robinhood lead; no assumed ten-second advantage',
                  samples=engine.db.execute('SELECT COUNT(*) FROM samples').fetchone()[0])

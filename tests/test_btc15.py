@@ -131,3 +131,17 @@ class SigningTests(unittest.TestCase):
                                      ask_inclusive_of_buy_spread=101,timestamp=time.time())]}
         with patch('copylab.btc15.request',side_effect=response):
             self.assertEqual(client.quote()['price'],100)
+
+
+class DiagnosticsTests(unittest.TestCase):
+    def test_lower_trigger_counts_do_not_create_trades(self):
+        from copylab.btc15 import signal_diagnostics
+        e=Engine(':memory:')
+        for now in range(12,22):tick(e,now)
+        # A two-basis-point move passes a shadow threshold but not the live three.
+        tick(e,22,100020)
+        counts=signal_diagnostics(e)['thresholds_bps']
+        self.assertEqual(counts['1']['unchanged_odds_pass'],1)
+        self.assertEqual(counts['3']['move_pass'],0)
+        self.assertEqual(e.positions(),[])
+        self.assertEqual(e.db.execute('SELECT COUNT(*) FROM pending').fetchone()[0],0)

@@ -46,3 +46,36 @@ class ArbitrageTests(unittest.TestCase):
 
     def test_failed_leg_is_loss(self):
         self.assertLess(scenarios()['second_leg_failure_stress']['loss'],0)
+
+    def test_published_fee_and_buffer(self):
+        m=dict(market(),paper_fee_rate=.07)
+        q=quote(m,books())
+        self.assertAlmostEqual(q['cost'],4.44605)
+        self.assertEqual(q['fee_model'],'published schedule plus buffer')
+        self.assertAlmostEqual(q['entry_prices'][0],.42)
+        self.assertAlmostEqual(q['entry_prices'][1],.43)
+
+    def test_raw_discount_can_still_lose_after_fees(self):
+        m=dict(market(),paper_fee_rate=.07)
+        with self.assertRaises(ValueError):quote(m,books((.49,.49)))
+        candidate=quote(m,books((.49,.49)),require_edge=False)
+        self.assertLess(candidate['expected_gain'],0)
+        self.assertGreater(quote(dict(m,paper_fee_rate=0),books((.49,.49)))['expected_gain'],0)
+
+    def test_live_scan_requires_known_fees_and_reports_closest(self):
+        from unittest.mock import patch
+        from copylab.arbitrage import scan
+        with patch('copylab.arbitrage.get',return_value=market()),patch('copylab.arbitrage.FEE_SCHEDULES',{}):
+            health=scan(Account(':memory:'),['c'])
+            self.assertEqual(health['entered'],0)
+            self.assertEqual(health['reasons'],{'Unknown published fees; skip':1})
+        with patch('copylab.arbitrage.get',return_value=market()),patch('copylab.arbitrage.FEE_SCHEDULES',{'c':.07}),patch('copylab.arbitrage.books_for',return_value=books((.5,.51))):
+            health=scan(Account(':memory:'),['c'])
+            self.assertEqual(health['entered'],0)
+            self.assertLess(health['closest_candidate']['expected_gain'],0)
+
+    def test_stale_exchange_snapshot_is_rejected(self):
+        from unittest.mock import patch
+        from copylab.arbitrage import books_for
+        with patch('copylab.arbitrage.get',return_value=dict(timestamp=1000)),patch('copylab.arbitrage.time.time',return_value=100):
+            with self.assertRaisesRegex(ValueError,'Stale exchange'):books_for(market())

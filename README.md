@@ -166,17 +166,20 @@ Run `python3 -m copylab.arbitrage` (or `--once` for one scan). This never submit
 orders. It has a separate $40 account in `arbitrage.sqlite3`, with at most $6 per
 complete pair, $12 of purchases per UTC day and $40 lifetime purchases. Five shares
 per outcome are the baseline minimum; higher venue minimums are respected.
-Discovery samples up to 60 ordinary binary markets from the 500 most active Gamma
-markets, refreshed every ten minutes. Negative-risk markets are excluded. A cycle
-checks markets sequentially; the ten-second target is a minimum interval, not a
-promise that every market is checked every ten seconds.
+Discovery samples up to 100 ordinary binary markets from the 500 most active Gamma
+markets, refreshed every ten minutes. Negative-risk markets are excluded. Four concurrent workers inspect markets; the ten-second target is a minimum interval,
+not a promise that every market is checked every ten seconds. Actual duration and
+coverage are included in the report.
 
-The scanner walks actual asks for equal quantities of both outcomes, reserves 10%
-of notional for costs, requires at least $0.02 and 1% expected edge, checks token and
+The scanner walks actual asks for equal quantities of both outcomes, uses each market's published taker fee schedule plus a half-cent per complete-set execution buffer,
+requires at least $0.02 and 1% expected edge, checks token and
 condition identities and rejects crossed books or incomplete depth. A candidate
 must pass a second book check; each parallel pair fetch must finish within two
-seconds. The reserve is a conservative modeling assumption, **not the exact market
-fee schedule**, and does not include every possible operational cost.
+seconds, and exchange book timestamps must be at most five seconds old. Unknown fee
+schedules are skipped. Fees are a cash-equivalent paper approximation, and the
+buffer does not cover every possible operational cost. Published metadata is
+refreshed with discovery every ten minutes. Status includes the closest evaluated
+candidate even when its expected gain is negative.
 
 Paper fills are conditional complete-pair fills. Live orders would be sequential:
 the second leg can fail, leaving directional exposure. Rechecking quotes does not
@@ -244,3 +247,9 @@ Readable trade logs, Word/Markdown reports, CSV exports and BTC trade notificati
 show prices and dollar amounts instead of share quantities. Quantities remain in
 the internal ledger for calculations. BTC report prices explicitly include modeled
 entry costs or subtract modeled exit costs; dollar cost/proceeds remain separate.
+
+BTC status also includes rolling diagnostic counts for hypothetical 1, 2 and 3
+basis-point triggers: how many observations pass the move filter, unchanged-odds
+filter, and spread/price/time window. These overlapping observations are **not**
+independent trades or measured returns. They exclude delayed execution, minimum
+size and budget checks. The live three-basis-point threshold remains unchanged.
