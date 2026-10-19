@@ -1,3 +1,4 @@
+from copylab.presentation import without_quantities
 """Export the live paper ledger without mixing in synthetic scenarios."""
 import csv
 import io
@@ -107,8 +108,8 @@ def export(ledger, directory, docx_python=None, now=None):
             report['screening']['selected'] = [r for r in screen['traders'] if r['selected']]
         except (OSError, ValueError, KeyError, TypeError) as error:
             report['screening_error'] = str(error)
-    atomic_write(directory/'trade-report.json', json.dumps(report, indent=2)+'\n')
-    fields = ['number','type','time','time_basis','market','outcome','wallet','shares','price',
+    atomic_write(directory/'trade-report.json', json.dumps(without_quantities(report), indent=2)+'\n')
+    fields = ['number','type','time','time_basis','market','outcome','wallet','price',
               'gross','fee_reserve','cost_basis','cash_change','realized_pnl','execution_policy','source_price','relative_price_change','source_age_seconds','entry_drag','sizing_target_cost','sizing_relative_commitment','sizing_reason','asset','source_transaction','event_id']
     stream = io.StringIO(newline='')
     writer = csv.DictWriter(stream, fieldnames=fields, extrasaction='ignore')
@@ -117,7 +118,7 @@ def export(ledger, directory, docx_python=None, now=None):
                      for k,v in event.items()} for event in report['trades'])
     atomic_write(directory/'trade-history.csv', stream.getvalue())
     audit_fields=['checked','policy','side','wallet','market','outcome','asset','source_price','entry_price',
-                  'relative_price_change','source_age_seconds','entry_drag','best_ask','best_bid','sizing_policy','sizing_target_cost','sizing_source_commitment','sizing_typical_commitment','sizing_relative_commitment','sizing_history_markets','sizing_reason','copied_exit_shares_total','copied_exit_proceeds_total','result']
+                  'relative_price_change','source_age_seconds','entry_drag','best_ask','best_bid','sizing_policy','sizing_target_cost','sizing_source_commitment','sizing_typical_commitment','sizing_relative_commitment','sizing_history_markets','sizing_reason','copied_exit_proceeds_total','result']
     audit_stream=io.StringIO(newline='')
     audit_writer=csv.DictWriter(audit_stream,fieldnames=audit_fields,extrasaction='ignore')
     audit_writer.writeheader()
@@ -138,7 +139,7 @@ def export(ledger, directory, docx_python=None, now=None):
     for event in report['trades']:
         lines += ['## %d %s %s' % (event['number'], event['type'], event['market']), '',
                   event['time']+' ('+event['time_basis']+')', 'Outcome: '+event['outcome'],
-                  'Shares: %.6f | Price: $%.4f' % (event['shares'],event['price']),
+                  'Price: $%.4f' % event['price'],
                   'Cash change: '+dollars(event['cash_change'])+' | Fee reserve: '+dollars(event['fee_reserve']),
                   'Realized profit or loss: '+('Recorded on exit' if event['realized_pnl'] is None else dollars(event['realized_pnl'])),
                   'Source wallet: '+event['wallet'], '']
@@ -156,7 +157,7 @@ def write_trade_log(ledger, path):
     lines=[]
     for event in report['trades']:
         parts=[event['time'],'PAPER '+event['type'],event['market'],event['outcome'],
-               '%.6f shares @ $%.4f'%(event['shares'],event['price'])]
+               'Price $%.4f'%event['price']]
         if event['type']=='BUY':
             parts.append('Spent '+dollars(-event['cash_change']))
         else:

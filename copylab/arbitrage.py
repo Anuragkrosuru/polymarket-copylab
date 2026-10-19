@@ -12,6 +12,7 @@ from pathlib import Path
 
 from copylab.__main__ import get
 from copylab.runtime import watcher_lock
+from copylab.presentation import without_quantities
 
 # Deliberately conservative assumption, not a claim about a market's actual fee.
 FEE_RESERVE = 0.10
@@ -140,22 +141,24 @@ def write_reports(account, directory, health):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     state = account.state()
+    for t in state['trades']:
+        t['entry_prices'] = [cost/(1+FEE_RESERVE)/t['shares_each'] for cost in t['leg_costs']]
     state.update(health)
     state['updated_utc'] = datetime.now(timezone.utc).isoformat()
     state['model'] = ('PAPER ONLY: conditional full-pair fills at twice-checked asks, 10% notional fee reserve; '
                       'no atomic execution, latency, queue or settlement-delay guarantee. Expected gains are not realized PnL.')
-    for name, data in [('status.json', json.dumps(state, indent=2))]:
+    for name, data in [('status.json', json.dumps(without_quantities(state), indent=2))]:
         temporary = directory / (name+'.tmp')
         temporary.write_text(data+'\n')
         temporary.replace(directory/name)
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['opened_utc','market','shares_each','cost','expected_payout','expected_gain','actual_payout','realized_pnl'])
+    writer.writerow(['opened_utc','market','first_price','second_price','cost','expected_payout','expected_gain','actual_payout','realized_pnl'])
     lines = []
     for t in state['trades']:
         stamp = datetime.fromtimestamp(t['opened'], timezone.utc).isoformat()
-        writer.writerow([stamp,t['market']['question'],t['shares_each'],t['cost'],t['expected_payout'],t['expected_gain'],t['payout'],'' if t['payout'] is None else t['payout']-t['cost']])
-        lines.append(f"{stamp} PAPER PAIR | {t['market']['question']} | {t['shares_each']:g} each | cost ${t['cost']:.4f} | expected gain ${t['expected_gain']:.4f} | payout {t['payout']}")
+        writer.writerow([stamp,t['market']['question'],*t['entry_prices'],t['cost'],t['expected_payout'],t['expected_gain'],t['payout'],'' if t['payout'] is None else t['payout']-t['cost']])
+        lines.append(f"{stamp} PAPER PAIR | {t['market']['question']} | entry prices ${t['entry_prices'][0]:.4f} / ${t['entry_prices'][1]:.4f} | cost ${t['cost']:.4f} | expected gain ${t['expected_gain']:.4f} | payout {t['payout']}")
     (directory/'trades.csv').write_text(output.getvalue())
     Path('arbitrage.log').write_text('\n'.join(lines)+ ('\n' if lines else ''))
 

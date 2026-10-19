@@ -239,3 +239,8 @@ can include repeated entries or hedges, and we do not know traders' total capita
 full position history or exposure elsewhere. The trade JSON and CSV include the
 target, relative commitment and reason; execution-quality.csv additionally records
 the baseline, observed source commitment and history sample size.
+
+Readable trade logs, Word/Markdown reports, CSV exports and BTC trade notifications
+show prices and dollar amounts instead of share quantities. Quantities remain in
+the internal ledger for calculations. BTC report prices explicitly include modeled
+entry costs or subtract modeled exit costs; dollar cost/proceeds remain separate.

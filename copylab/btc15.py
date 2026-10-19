@@ -15,6 +15,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 from copylab.runtime import watcher_lock
+from copylab.presentation import without_quantities
 
 CONFIG = '.env.robinhood.json'
 
@@ -298,20 +299,23 @@ def atomic(path, text):
 def report(engine, folder, health, books=None):
     folder=Path(folder);folder.mkdir(parents=True,exist_ok=True)
     state=engine.state(books)
+    for t in state['trades']:
+        t['entry_price_including_costs'] = t['cost']/t['shares']
+        t['exit_price_after_costs'] = None if t['proceeds'] is None else t['proceeds']/t['shares']
     state.update(health,updated_utc=datetime.now(timezone.utc).isoformat(),mode='PAPER ONLY',
                  hypothesis='Unverified Robinhood lead; no assumed ten-second advantage',
                  samples=engine.db.execute('SELECT COUNT(*) FROM samples').fetchone()[0])
-    atomic(folder/'status.json',json.dumps(state,indent=2)+'\n')
+    atomic(folder/'status.json',json.dumps(without_quantities(state),indent=2)+'\n')
     output=io.StringIO();writer=csv.writer(output)
-    writer.writerow(['id','market','outcome','opened_utc','shares','cost','closed_utc','proceeds','pnl','exit_reason'])
+    writer.writerow(['id','market','outcome','opened_utc','entry_price_including_costs','cost','closed_utc','exit_price_after_costs','proceeds','pnl','exit_reason'])
     lines=[]
     for t in state['trades']:
         opened=datetime.fromtimestamp(t['opened'],timezone.utc).isoformat()
         closed='' if t['closed'] is None else datetime.fromtimestamp(t['closed'],timezone.utc).isoformat()
-        writer.writerow([t['id'],t['market']['title'],['Up','Down'][t['direction']],opened,t['shares'],t['cost'],closed,t['proceeds'],'' if not closed else t['proceeds']-t['cost'],t['exit_reason']])
-        lines.append(f"{opened} PAPER BUY | {t['market']['title']} | {['Up','Down'][t['direction']]} | {t['shares']:g} shares | cost ${t['cost']:.4f}")
+        writer.writerow([t['id'],t['market']['title'],['Up','Down'][t['direction']],opened,t['entry_price_including_costs'],t['cost'],closed,t['exit_price_after_costs'],t['proceeds'],'' if not closed else t['proceeds']-t['cost'],t['exit_reason']])
+        lines.append(f"{opened} PAPER BUY | {t['market']['title']} | {['Up','Down'][t['direction']]} | all-in entry price ${t['entry_price_including_costs']:.4f} | cost ${t['cost']:.4f}")
         if closed:
-            lines.append(f"{closed} PAPER EXIT | trade {t['id']} | proceeds ${t['proceeds']:.4f} | P/L ${t['proceeds']-t['cost']:.4f} | {t['exit_reason']}")
+            lines.append(f"{closed} PAPER EXIT | trade {t['id']} | net exit price ${t['exit_price_after_costs']:.4f} | proceeds ${t['proceeds']:.4f} | P/L ${t['proceeds']-t['cost']:.4f} | {t['exit_reason']}")
     atomic(folder/'trades.csv',output.getvalue())
     atomic(folder/'trades.log','\n'.join(lines)+ ('\n' if lines else ''))
 

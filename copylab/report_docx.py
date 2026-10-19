@@ -115,19 +115,19 @@ def build(report, output):
         document.add_paragraph('Open positions','Heading 1')
         for position in account['positions']:
             document.add_paragraph(clean(position['title'])+' '+clean(position['outcome']), 'Heading 2')
-            table(document, ['Shares','Remaining cost','Estimated value','Open profit or loss'],
-                  [('%.6f'%position['shares'],dollars(position['cost']),dollars(position['value']),dollars(position['pnl']))],
-                  [1.3,1.7,1.7,2.3])
+            table(document, ['Remaining cost','Estimated value','Open profit or loss'],
+                  [(dollars(position['cost']),dollars(position['value']),dollars(position['pnl']))],
+                  [2.3,2.3,2.4])
     document.add_paragraph('Complete trade history','Heading 1')
     if not report['trades']:
         document.add_paragraph('There are no copied buys, sells, or settlements to list yet. The CSV export will contain every event as activity arrives.')
     for event in report['trades']:
         document.add_paragraph('%d %s %s' % (event['number'],event['type'],clean(event['market'])), 'Heading 2')
         document.add_paragraph(event['time']+' | '+event['time_basis']+' | Outcome '+clean(event['outcome']))
-        table(document, ['Shares','Price per share','Fee reserve','Cash change','Realized gain or loss'],
-              [('%.6f'%event['shares'],'$%.4f'%event['price'],dollars(event['fee_reserve']),
+        table(document, ['Price','Fee reserve','Cash change','Realized gain or loss'],
+              [('$%.4f'%event['price'],dollars(event['fee_reserve']),
                 dollars(event['cash_change']), 'On exit' if event['realized_pnl'] is None else dollars(event['realized_pnl']))],
-              [1.2,1.4,1.2,1.4,1.8])
+              [1.5,1.5,1.7,2.3])
         document.add_paragraph('Allocated entry cost '+dollars(event['cost_basis'])+'. Source wallet '+clean(event['wallet'])+'.')
         if event['source_transaction']:
             paragraph = document.add_paragraph('Source transaction '+clean(event['source_transaction']))
@@ -143,7 +143,7 @@ def build(report, output):
             (screening['assessed_count'],sum(c['leaderboard_slots'] for c in screening['coverage']),screening['selected_core'],screening['selected_experimental'],timestamp(screening['generated'])))
         document.add_paragraph('Core screening requires at least %d distinct trade transactions, %d closed markets, and %d observed trading days in the sampled %d day window. Sampled profit must remain positive after excluding the largest winning market; that market may contribute at most %.0f percent of positive market profit. The minimum profit factor is %.1f.' %
             (policy['min_transactions'],policy['min_closed_markets'],policy['min_active_days'],policy['lookback_days'],policy['max_largest_win_share']*100,policy['min_profit_factor']))
-        document.add_paragraph('Experimental wallets may have concentrated wins and weaker evidence. At most %d are selected, with a $%.2f copied position cap each, a $1 daily cap per experimental wallet, and a $2 daily cap for the experimental group. The overall $8 daily spending cap and $40 total purchase cap still apply. Trial in the list below means experimental. The full assessed list and exclusion reasons are saved in trader-screening.csv.' %
+        document.add_paragraph('Experimental wallets may have concentrated wins and weaker evidence. At most %d are selected, with a $%.2f copied position cap each, a $1 daily cap per experimental wallet, and a $2 daily cap for the experimental group. The $40 total purchase cap still applies; there is no overall daily purchase cap. Trial in the list below means experimental. The full assessed list and exclusion reasons are saved in trader-screening.csv.' %
             (policy['max_experimental_wallets'],policy['experimental_max_cost']))
         document.add_paragraph(screening['caveat'])
         document.add_paragraph('Open losses, deposits, off platform hedges and related wallets are not assessed. Passing this screen does not establish a copyable trading advantage or low risk.')
@@ -160,11 +160,11 @@ def build(report, output):
         document.add_paragraph('Monitoring progress','Heading 1')
         scans = account['scans']
         if len(scans) > 5:
-            document.add_paragraph('%d source wallets monitored. Latest scan %s. Complete per wallet scan records are saved in trade-report.json.' %
+            document.add_paragraph('%d source wallets monitored. Latest scan %s. Details are saved in trade-report.json.' %
                 (len(scans), timestamp(max(s['checked'] for s in scans))))
             scans = [s for s in scans if s['error'] or report['generated_timestamp']-s['checked'] > 120]
             if not scans:
-                document.add_paragraph('All monitored wallets have fresh scans without reported API errors.')
+                document.paragraphs[-1].add_run(' All scans are fresh without reported API errors.')
         for scan in scans:
             state = scan['error'] or ('Polling normally' if report['generated_timestamp']-scan['checked'] <= 120 else 'Last scan is stale')
             paragraph = document.add_paragraph(clean(scan['wallet']))
