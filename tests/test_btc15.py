@@ -10,7 +10,7 @@ def tick(e, now, price=100000, up=.40, rh=True, market=None):
 
 
 def pending_engine():
-    e=Engine(':memory:')
+    e=Engine(':memory:',strategy='lead')
     for now in range(12,22): tick(e,now)
     assert tick(e,22,100050)=='signal queued; no fill yet'
     return e
@@ -18,7 +18,7 @@ def pending_engine():
 
 class BTC15Tests(unittest.TestCase):
     def test_examples_use_same_engine_and_show_loss(self):
-        scenarios=simulate()['scenarios']
+        scenarios=simulate(strategy='lead')['scenarios']
         self.assertAlmostEqual(scenarios[0]['cash'],40.07906)
         self.assertAlmostEqual(scenarios[1]['cash'],39.53637)
         self.assertEqual(scenarios[2]['trades'],[])
@@ -64,11 +64,11 @@ class BTC15Tests(unittest.TestCase):
 
     def test_loss_pause_persists_across_restart(self):
         with tempfile.TemporaryDirectory() as folder:
-            p=folder+'/db.sqlite3';e=Engine(p)
+            p=folder+'/db.sqlite3';e=Engine(p,strategy='lead')
             tick(e,12)
             with e.db:e.db.execute('UPDATE days SET baseline=44')
             self.assertEqual(tick(e,13),'risk pause')
-            e.db.close();e=Engine(p)
+            e.db.close();e=Engine(p,strategy='lead')
             with e.db:e.db.execute('UPDATE days SET baseline=40')
             self.assertEqual(tick(e,14),'risk pause')
 
@@ -136,7 +136,7 @@ class SigningTests(unittest.TestCase):
 class DiagnosticsTests(unittest.TestCase):
     def test_lower_trigger_counts_do_not_create_trades(self):
         from copylab.btc15 import signal_diagnostics
-        e=Engine(':memory:')
+        e=Engine(':memory:',strategy='lead')
         for now in range(12,22):tick(e,now)
         # A two-basis-point move passes a shadow threshold but not the live three.
         tick(e,22,100020)

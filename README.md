@@ -202,10 +202,10 @@ stress case. These are accounting examples, not historical or live returns.
 Official references: [positions and tokens](https://docs.polymarket.com/concepts/positions-tokens)
 and [market fees](https://docs.polymarket.com/trading/fees).
 
-### Robinhood lead experiment: BTC 15-minute markets
+### Robinhood BTC trend paper bot
 
-A third, separate **$40 paper account** tests Robinhood price moves against
-Polymarket's executable quotes. See [setup, strategy and limitations](docs/btc15-experiment.md).
+A third, separate **$40 paper account** follows short-term Robinhood BTC trends
+and trades Polymarket's 15-minute Up/Down markets. See [setup, strategy and limitations](docs/btc15-experiment.md).
 Run `python3 -m copylab.btc15 --simulate` for invented scenarios or
 `python3 -m copylab.btc15` for the live collector. Connect a read-quotes-only
 Robinhood key using `scripts/connect-robinhood.command`. Until connected, the
@@ -252,4 +252,15 @@ BTC status also includes rolling diagnostic counts for hypothetical 1, 2 and 3
 basis-point triggers: how many observations pass the move filter, unchanged-odds
 filter, and spread/price/time window. These overlapping observations are **not**
 independent trades or measured returns. They exclude delayed execution, minimum
-size and budget checks. The live three-basis-point threshold remains unchanged.
+size and budget checks. These describe the optional legacy lead strategy. The default BTC strategy now uses trend confirmation and a five-percent net profit target.
+
+The default BTC trend strategy confirms 30-second momentum of at least one basis
+point with fast/slow averages, ten-second continuation and tick direction. It
+requests a sale at **5% net position profit after modeled costs**, or exits on a
+20% position loss, confirmed reversal, two-minute holding limit or approaching
+interval end. Profit targets and loss limits are triggers, not guaranteed fills.
+After an exit, it waits 20 seconds; another entry in the same direction additionally
+requires a 0.5-basis-point BTC pullback and 0.25-basis-point recovery. Up to four
+entries per interval are permitted with one position open at a time. Existing
+$3 position, $12 daily purchases, $40 lifetime purchases and $4 daily loss pause
+remain. `--strategy lead` retains the old latency experiment for comparison.

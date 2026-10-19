@@ -1,4 +1,4 @@
-"""Robinhood lead hypothesis, paper-only BTC 15-minute market experiment."""
+"""Paper-only Robinhood BTC trends, profit targets and pullback re-entry."""
 import argparse
 import bisect
 import base64
@@ -17,6 +17,7 @@ from urllib.request import Request, urlopen
 
 from copylab.runtime import watcher_lock
 from copylab.presentation import without_quantities
+from copylab import btc_trend
 
 CONFIG = '.env.robinhood.json'
 
@@ -153,20 +154,39 @@ def fill(book, side, shares, fee_rate):
 
 
 class Engine:
-    def __init__(self, path):
+    def __init__(self, path, strategy='trend'):
+        self.strategy=strategy
+        self.last_signal={}
         self.db = sqlite3.connect(path, timeout=10)
         self.db.executescript('''
         CREATE TABLE IF NOT EXISTS samples(id INTEGER PRIMARY KEY, received REAL, condition TEXT, rh REAL, upask REAL, downask REAL, payload TEXT);
         CREATE INDEX IF NOT EXISTS samples_time ON samples(received);
-        CREATE TABLE IF NOT EXISTS trades(id INTEGER PRIMARY KEY, condition TEXT UNIQUE, opened REAL, market TEXT, direction INTEGER, shares REAL, cost REAL, closed REAL, proceeds REAL, exit_reason TEXT);
+        CREATE TABLE IF NOT EXISTS trades(id INTEGER PRIMARY KEY, condition TEXT, opened REAL, market TEXT, direction INTEGER, shares REAL, cost REAL, closed REAL, proceeds REAL, exit_reason TEXT);
         CREATE TABLE IF NOT EXISTS pending(id INTEGER PRIMARY KEY CHECK(id=1), created REAL, market TEXT, direction INTEGER, ask REAL);
         CREATE TABLE IF NOT EXISTS days(day TEXT PRIMARY KEY, baseline REAL, halted INTEGER);
         ''')
+        schema=self.db.execute("SELECT sql FROM sqlite_master WHERE name='trades'").fetchone()[0]
+        if 'condition TEXT UNIQUE' in schema:
+            with self.db:
+                self.db.execute('ALTER TABLE trades RENAME TO trades_before_reentry')
+                self.db.execute('CREATE TABLE trades(id INTEGER PRIMARY KEY,condition TEXT,opened REAL,market TEXT,direction INTEGER,shares REAL,cost REAL,closed REAL,proceeds REAL,exit_reason TEXT)')
+                self.db.execute('INSERT INTO trades SELECT * FROM trades_before_reentry')
+                self.db.execute('DROP TABLE trades_before_reentry')
+        columns={r[1] for r in self.db.execute('PRAGMA table_info(trades)')}
+        with self.db:
+            if 'strategy' not in columns:
+                self.db.execute("ALTER TABLE trades ADD COLUMN strategy TEXT NOT NULL DEFAULT 'lead'")
+            self.db.execute('CREATE UNIQUE INDEX IF NOT EXISTS one_open_btc_position ON trades((1)) WHERE closed IS NULL')
+            self.db.execute('CREATE TABLE IF NOT EXISTS strategy_state(id INTEGER PRIMARY KEY CHECK(id=1), strategy TEXT)')
+            previous=self.db.execute('SELECT strategy FROM strategy_state WHERE id=1').fetchone()
+            if not previous or previous[0]!=strategy:
+                self.db.execute('DELETE FROM pending')
+                self.db.execute('INSERT OR REPLACE INTO strategy_state VALUES (1,?)',(strategy,))
 
     def positions(self):
-        rows = self.db.execute('SELECT id,condition,opened,market,direction,shares,cost,closed,proceeds,exit_reason FROM trades ORDER BY id').fetchall()
+        rows = self.db.execute('SELECT id,condition,opened,market,direction,shares,cost,closed,proceeds,exit_reason,strategy FROM trades ORDER BY id').fetchall()
         return [dict(id=r[0], condition=r[1], opened=r[2], market=json.loads(r[3]), direction=r[4],
-                     shares=r[5], cost=r[6], closed=r[7], proceeds=r[8], exit_reason=r[9]) for r in rows]
+                     shares=r[5], cost=r[6], closed=r[7], proceeds=r[8], exit_reason=r[9],strategy=r[10]) for r in rows]
 
     def state(self, books=None):
         positions = self.positions()
@@ -214,9 +234,18 @@ class Engine:
                 continue
             try:
                 proceeds = fill(books[t['market']['tokens'][t['direction']]], 'bids', t['shares'], t['market']['fee_rate'])
+                trend=t['strategy']=='trend'
+                reversal=(trend and self.last_signal.get('condition')==t['condition']
+                          and now-self.last_signal.get('checked',0)<=3
+                          and self.last_signal.get('direction') is not None
+                          and self.last_signal['direction']!=t['direction'])
                 reason = ('daily loss pause' if breached or (baseline and baseline[1]) else
-                          'ten-second exit' if now-t['opened'] >= 10 else
-                          'position loss exit' if proceeds <= t['cost']*.8 else None)
+                          'five-percent net profit target' if trend and proceeds>=t['cost']*(1+btc_trend.TAKE_PROFIT) else
+                          'position loss exit' if proceeds<=t['cost']*(1-btc_trend.STOP_LOSS) else
+                          'confirmed trend reversal' if reversal else
+                          'interval ending exit' if trend and now>=t['market']['end']-20 else
+                          'two-minute holding limit' if trend and now-t['opened']>=btc_trend.MAX_HOLD else
+                          'ten-second exit' if not trend and now-t['opened']>=10 else None)
                 if reason:
                     with self.db:
                         self.db.execute('UPDATE trades SET closed=?,proceeds=?,exit_reason=? WHERE id=? AND closed IS NULL',
@@ -232,6 +261,8 @@ class Engine:
             self.db.execute('INSERT INTO samples(received,condition,rh,upask,downask,payload) VALUES (?,?,?,?,?,?)',
                             (now,market['condition'], rh['price'] if fresh else None,*asks,
                              json.dumps({'rh':rh,'books':books,'tokens':market['tokens']})))
+        if self.strategy=='trend':
+            self.last_signal=dict(btc_trend.signal(self.db,market['condition'],now),condition=market['condition'],checked=now)
         state = self.state(books)
         day = datetime.fromtimestamp(now, timezone.utc).date().isoformat()
         baseline = self.db.execute('SELECT baseline,halted FROM days WHERE day=?',(day,)).fetchone()
@@ -253,8 +284,13 @@ class Engine:
             with self.db:
                 self.db.execute('DELETE FROM pending')
             if (now-created > 3 or not fresh or halted or original['condition'] != market['condition']
-                    or market['end']-now < 30 or asks[direction] > original_ask+.01):
+                    or market['end']-now < (45 if self.strategy=='trend' else 30) or asks[direction] > original_ask+.01
+                    or (self.strategy=='trend' and self.last_signal.get('direction')!=direction)):
                 return 'pending signal expired or rejected'
+            if self.strategy=='trend':
+                ready,reason=btc_trend.reentry(self.db,market,direction,now)
+                if not ready:
+                    return reason
             quantity = max(5, market['minimum'], number(books[market['tokens'][direction]]['min_order_size']))
             cost = fill(books[market['tokens'][direction]], 'asks',quantity,market['fee_rate'])
             liquid = fill(books[market['tokens'][direction]], 'bids',quantity,market['fee_rate'])
@@ -264,13 +300,29 @@ class Engine:
                     or liquid < .85*cost or any(t['closed'] is None for t in state['trades'])):
                 return 'budget, open exposure or entry cost guard'
             with self.db:
-                result=self.db.execute('INSERT OR IGNORE INTO trades(condition,opened,market,direction,shares,cost) VALUES (?,?,?,?,?,?)',
-                                       (market['condition'],now,json.dumps(market),direction,quantity,cost))
+                result=self.db.execute('INSERT OR IGNORE INTO trades(condition,opened,market,direction,shares,cost,strategy) VALUES (?,?,?,?,?,?,?)',
+                                       (market['condition'],now,json.dumps(market),direction,quantity,cost,self.strategy))
             return 'PAPER BUY' if result.rowcount else 'already traded this interval'
         if halted or not fresh:
             return 'risk pause' if halted else 'waiting for fresh Robinhood quote'
-        if not market['start']+12 <= now <= market['end']-30:
+        if not market['start']+12 <= now <= market['end']-(45 if self.strategy=='trend' else 30):
             return 'outside entry window'
+        if self.strategy=='trend':
+            if any(t['closed'] is None for t in self.positions()):
+                return 'holding position; watching profit target and risk exits'
+            direction=self.last_signal.get('direction')
+            if direction is None:
+                return self.last_signal['reason']
+            ready,reason=btc_trend.reentry(self.db,market,direction,now)
+            if not ready:
+                return reason
+            ask=asks[direction]
+            bid=max(number(r['price']) for r in books[market['tokens'][direction]]['bids'])
+            if not (.10<=ask<=.80 and ask-bid<=.03+1e-9):
+                return 'trend entry spread or price rejected'
+            with self.db:
+                self.db.execute('INSERT OR REPLACE INTO pending VALUES (1,?,?,?,?)',(now,json.dumps(market),direction,ask))
+            return 'trend signal queued; no fill yet'
         if self.db.execute('SELECT 1 FROM trades WHERE condition=?',(market['condition'],)).fetchone():
             return 'already traded this interval'
         prior=self.db.execute('SELECT received,rh,upask,downask FROM samples WHERE condition=? AND received BETWEEN ? AND ? AND rh IS NOT NULL ORDER BY ABS(received-?) LIMIT 1',
@@ -343,32 +395,40 @@ def report(engine, folder, health, books=None):
     state=engine.state(books)
     for t in state['trades']:
         t['entry_price_including_costs'] = t['cost']/t['shares']
+        t['net_return_percent'] = None if t['proceeds'] is None else 100*(t['proceeds']/t['cost']-1)
+        t['target_proceeds'] = t['cost']*1.05 if t['strategy']=='trend' else None
         t['exit_price_after_costs'] = None if t['proceeds'] is None else t['proceeds']/t['shares']
     if time.monotonic()-getattr(engine,'diagnostics_at',-100) >= 30:
         engine.cached_diagnostics=signal_diagnostics(engine)
         engine.diagnostics_at=time.monotonic()
     state['signal_diagnostics']=engine.cached_diagnostics
+    state['strategy']=engine.strategy
+    state['strategy_version']=btc_trend.VERSION if engine.strategy=='trend' else 'btc-lead-v1'
+    state['trend_signal']=engine.last_signal
+    if engine.strategy=='trend':
+        state['strategy_rules']=dict(net_profit_target=.05,position_loss_trigger=.20,max_hold_seconds=120,
+                                     reentry_cooldown_seconds=20,max_entries_per_interval=4,daily_loss_pause=4)
     state.update(health,updated_utc=datetime.now(timezone.utc).isoformat(),mode='PAPER ONLY',
-                 hypothesis='Unverified Robinhood lead; no assumed ten-second advantage',
+                 hypothesis='Experimental trend following; five-percent target is not guaranteed' if engine.strategy=='trend' else 'Unverified Robinhood lead; no assumed ten-second advantage',
                  samples=engine.db.execute('SELECT COUNT(*) FROM samples').fetchone()[0])
     atomic(folder/'status.json',json.dumps(without_quantities(state),indent=2)+'\n')
     output=io.StringIO();writer=csv.writer(output)
-    writer.writerow(['id','market','outcome','opened_utc','entry_price_including_costs','cost','closed_utc','exit_price_after_costs','proceeds','pnl','exit_reason'])
+    writer.writerow(['id','market','outcome','opened_utc','entry_price_including_costs','cost','closed_utc','exit_price_after_costs','proceeds','pnl','net_return_percent','exit_reason'])
     lines=[]
     for t in state['trades']:
         opened=datetime.fromtimestamp(t['opened'],timezone.utc).isoformat()
         closed='' if t['closed'] is None else datetime.fromtimestamp(t['closed'],timezone.utc).isoformat()
-        writer.writerow([t['id'],t['market']['title'],['Up','Down'][t['direction']],opened,t['entry_price_including_costs'],t['cost'],closed,t['exit_price_after_costs'],t['proceeds'],'' if not closed else t['proceeds']-t['cost'],t['exit_reason']])
+        writer.writerow([t['id'],t['market']['title'],['Up','Down'][t['direction']],opened,t['entry_price_including_costs'],t['cost'],closed,t['exit_price_after_costs'],t['proceeds'],'' if not closed else t['proceeds']-t['cost'],t['net_return_percent'],t['exit_reason']])
         lines.append(f"{opened} PAPER BUY | {t['market']['title']} | {['Up','Down'][t['direction']]} | all-in entry price ${t['entry_price_including_costs']:.4f} | cost ${t['cost']:.4f}")
         if closed:
-            lines.append(f"{closed} PAPER EXIT | trade {t['id']} | net exit price ${t['exit_price_after_costs']:.4f} | proceeds ${t['proceeds']:.4f} | P/L ${t['proceeds']-t['cost']:.4f} | {t['exit_reason']}")
+            lines.append(f"{closed} PAPER EXIT | trade {t['id']} | net exit price ${t['exit_price_after_costs']:.4f} | proceeds ${t['proceeds']:.4f} | P/L ${t['proceeds']-t['cost']:.4f} ({t['net_return_percent']:.2f}%) | {t['exit_reason']}")
     atomic(folder/'trades.csv',output.getvalue())
     atomic(folder/'trades.log','\n'.join(lines)+ ('\n' if lines else ''))
 
 
 def live(args):
     with watcher_lock(args.database):
-        engine=Engine(args.database)
+        engine=Engine(args.database,strategy=args.strategy)
         market=None
         with ThreadPoolExecutor(max_workers=4) as pool:
             while True:
@@ -441,10 +501,34 @@ def fake_books(now,up=.40,down=.60):
             for token,price in [('up',up),('down',down)]}
 
 
-def simulate():
+def simulate_trend():
+    scenarios=[]
+    for name in ['profit_and_pullback_reentry','adverse_move','flat_no_trend']:
+        e=Engine(':memory:',strategy='trend');m=fake_market();decisions=[]
+        for now in range(86):
+            price=100000+now
+            if name=='profit_and_pullback_reentry' and 56<=now<=62:
+                price=100040+(now-56)*.2
+            if name=='flat_no_trend':
+                price=100000
+            up=.40
+            if name=='profit_and_pullback_reentry':
+                up=.48 if 50<=now<60 else .43 if 60<=now<80 else .52 if now>=80 else .40
+            elif name=='adverse_move' and now>=50:
+                up=.30
+            b=fake_books(now,up=up,down=1-up)
+            decisions.append(e.tick(now,m,dict(price=price,timestamp=now,received=now),b))
+        scenarios.append(dict(name=name,**e.state(b),decisions=decisions))
+    return dict(label='SYNTHETIC ONLY: invented trends and quotes; each scenario starts at $40. Not measured returns.',
+                strategy=btc_trend.VERSION,scenarios=scenarios)
+
+
+def simulate(strategy='trend'):
+    if strategy=='trend':
+        return simulate_trend()
     scenarios=[]
     for name,exit_ask,signal_ask in [('lag_then_favorable',.47,.40),('lag_then_adverse',.36,.40),('odds_already_repriced',.47,.45)]:
-        e=Engine(':memory:');m=fake_market();decisions=[]
+        e=Engine(':memory:',strategy='lead');m=fake_market();decisions=[]
         for now in range(12,36):
             price=100000 if now < 22 else 100050
             up=.40 if now < 22 else signal_ask if now < 33 else exit_ask
@@ -459,6 +543,7 @@ def simulate():
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--database',default='btc15.sqlite3')
+    p.add_argument('--strategy',choices=['trend','lead'],default='trend')
     p.add_argument('--report-dir',default='reports/btc15')
     p.add_argument('--config',default=CONFIG)
     p.add_argument('--poll',type=float,default=1)
@@ -487,7 +572,7 @@ def main():
         with os.fdopen(descriptor,'w') as handle: json.dump(data,handle)
         print('Saved locally. Background collector reloads configuration each cycle.')
     elif a.simulate:
-        print(json.dumps(simulate(),indent=2))
+        print(json.dumps(without_quantities(simulate(a.strategy)),indent=2))
     else:
         if not math.isfinite(a.poll) or a.poll < 1: p.error('poll must be at least one second')
         live(a)
