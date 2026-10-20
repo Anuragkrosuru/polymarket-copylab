@@ -17,7 +17,7 @@ from urllib.request import Request, urlopen
 
 from copylab.runtime import watcher_lock
 from copylab.presentation import without_quantities
-from copylab import btc_trend, paper_config
+from copylab import btc_trend, btc_scalp, paper_config
 
 CONFIG = '.env.robinhood.json'
 
@@ -154,7 +154,7 @@ def fill(book, side, shares, fee_rate):
 
 
 class Engine:
-    def __init__(self, path, strategy='trend', initial_cash=None, goal=None, compound=None):
+    def __init__(self, path, strategy='scalp', initial_cash=None, goal=None, compound=None):
         self.strategy=strategy
         self.last_signal={}
         self.db = sqlite3.connect(path, timeout=10)
@@ -165,6 +165,7 @@ class Engine:
         CREATE TABLE IF NOT EXISTS trades(id INTEGER PRIMARY KEY, condition TEXT, opened REAL, market TEXT, direction INTEGER, shares REAL, cost REAL, closed REAL, proceeds REAL, exit_reason TEXT);
         CREATE TABLE IF NOT EXISTS pending(id INTEGER PRIMARY KEY CHECK(id=1), created REAL, market TEXT, direction INTEGER, ask REAL);
         CREATE TABLE IF NOT EXISTS days(day TEXT PRIMARY KEY, baseline REAL, halted INTEGER);
+        CREATE TABLE IF NOT EXISTS trade_peaks(trade_id INTEGER PRIMARY KEY, proceeds REAL, checked REAL);
         ''')
         schema=self.db.execute("SELECT sql FROM sqlite_master WHERE name='trades'").fetchone()[0]
         if 'condition TEXT UNIQUE' in schema:
@@ -235,17 +236,33 @@ class Engine:
                 continue
             try:
                 proceeds = fill(books[t['market']['tokens'][t['direction']]], 'bids', t['shares'], t['market']['fee_rate'])
-                trend=t['strategy']=='trend'
+                scalp=t['strategy']=='scalp'
+                trend=t['strategy'] in ('trend','scalp')
+                limits=t['market'].get('scalp_policy',btc_scalp.policy()) if scalp else {}
+                with self.db:
+                    old=self.db.execute('SELECT proceeds FROM trade_peaks WHERE trade_id=?',(t['id'],)).fetchone()
+                    peak=max(proceeds,old[0] if old else proceeds)
+                    self.db.execute('INSERT OR REPLACE INTO trade_peaks VALUES (?,?,?)',(t['id'],peak,now))
+                trailing=scalp and peak>=t['cost']*1.03 and proceeds<=max(t['cost']*1.005,peak-t['cost']*.02)
+                adverse=False
+                entry_rh=t['market'].get('entry_rh_price')
+                if scalp and entry_rh and self.last_signal.get('checked',0)>=now-3:
+                    current=self.last_signal.get('current_rh')
+                    sign=1 if t['direction']==0 else -1
+                    adverse=bool(current and sign*(current/entry_rh-1)<=-.0001)
                 reversal=(trend and self.last_signal.get('condition')==t['condition']
                           and now-self.last_signal.get('checked',0)<=3
                           and self.last_signal.get('direction') is not None
                           and self.last_signal['direction']!=t['direction'])
                 reason = ('daily loss pause' if breached or (baseline and baseline[1]) else
-                          'five-percent net profit target' if trend and proceeds>=t['cost']*(1+btc_trend.TAKE_PROFIT) else
-                          'position loss exit' if proceeds<=t['cost']*(1-btc_trend.STOP_LOSS) else
+                          'five-percent net profit target' if trend and proceeds>=t['cost']*(1+limits.get('take_profit',btc_trend.TAKE_PROFIT)) else
+                          'scalp profit protection' if trailing else
+                          'position loss exit' if proceeds<=t['cost']*(1-limits.get('stop_loss',btc_trend.STOP_LOSS)) else
+                          'scalp BTC signal invalidated' if adverse else
                           'confirmed trend reversal' if reversal else
                           'interval ending exit' if trend and now>=t['market']['end']-20 else
-                          'two-minute holding limit' if trend and now-t['opened']>=btc_trend.MAX_HOLD else
+                          'one-minute scalp holding limit' if scalp and now-t['opened']>=limits.get('max_hold',60) else
+                          'two-minute holding limit' if trend and not scalp and now-t['opened']>=btc_trend.MAX_HOLD else
                           'ten-second exit' if not trend and now-t['opened']>=10 else None)
                 if reason:
                     with self.db:
@@ -261,9 +278,9 @@ class Engine:
         with self.db:
             self.db.execute('INSERT INTO samples(received,condition,rh,upask,downask,payload) VALUES (?,?,?,?,?,?)',
                             (now,market['condition'], rh['price'] if fresh else None,*asks,
-                             json.dumps({'rh':rh,'books':books,'tokens':market['tokens']})))
-        if self.strategy=='trend':
-            self.last_signal=dict(btc_trend.signal(self.db,market['condition'],now),condition=market['condition'],checked=now)
+                             json.dumps({'rh':rh,'books':books,'tokens':market['tokens'],'market':market})))
+        if self.strategy in ('trend','scalp'):
+            self.last_signal=dict(btc_trend.signal(self.db,market['condition'],now),condition=market['condition'],checked=now,current_rh=rh['price'] if fresh else None)
         state = self.state(books)
         day = datetime.fromtimestamp(now, timezone.utc).date().isoformat()
         baseline = self.db.execute('SELECT baseline,halted FROM days WHERE day=?',(day,)).fetchone()
@@ -285,16 +302,16 @@ class Engine:
             with self.db:
                 self.db.execute('DELETE FROM pending')
             if (now-created > 3 or not fresh or halted or original['condition'] != market['condition']
-                    or market['end']-now < (45 if self.strategy=='trend' else 30) or asks[direction] > original_ask+.01
-                    or (self.strategy=='trend' and self.last_signal.get('direction')!=direction)):
+                    or market['end']-now < (45 if self.strategy in ('trend','scalp') else 30) or asks[direction] > original_ask+.01
+                    or (self.strategy in ('trend','scalp') and self.last_signal.get('direction')!=direction)):
                 return 'pending signal expired or rejected'
-            if self.strategy=='trend':
-                ready,reason=btc_trend.reentry(self.db,market,direction,now)
+            if self.strategy in ('trend','scalp'):
+                ready,reason=(btc_scalp.reentry if self.strategy=='scalp' else btc_trend.reentry)(self.db,market,direction,now)
                 if not ready:
                     return reason
             state=self.state(books)
             risk_scale=paper_config.scale(self.paper,state['realized_pnl'])
-            position_cap=3*risk_scale
+            position_cap=(btc_scalp.POSITION_BASE if self.strategy=='scalp' else 3)*risk_scale
             quantity = max(5, market['minimum'], number(books[market['tokens'][direction]]['min_order_size']))
             if self.paper['compound'] or self.paper['initial_cash']!=40:
                 quantity=max(quantity,math.floor(position_cap/(asks[direction]*(1+market['fee_rate'])+.005)))
@@ -302,31 +319,40 @@ class Engine:
             liquid = fill(books[market['tokens'][direction]], 'bids',quantity,market['fee_rate'])
             state=self.state(books)
             spent_today=sum(t['cost'] for t in state['trades'] if datetime.fromtimestamp(t['opened'],timezone.utc).date().isoformat()==day)
-            if (cost > position_cap or cost > state['cash'] or spent_today+cost > 12*risk_scale or
+            if (cost > position_cap or cost > state['cash'] or spent_today+cost > (btc_scalp.DAILY_TURNOVER_BASE if self.strategy=='scalp' else 12)*risk_scale or
                     (not self.paper['compound'] and state['lifetime_spend']+cost > self.paper['initial_cash'])
-                    or liquid < .85*cost or any(t['closed'] is None for t in state['trades'])):
+                    or liquid < (1-btc_scalp.MAX_ENTRY_DRAG if self.strategy=='scalp' else .85)*cost or any(t['closed'] is None for t in state['trades'])):
                 return 'budget, open exposure or entry cost guard'
+            entry_market=market
+            if self.strategy=='scalp':
+                supported,reason,details=btc_scalp.entry_guard(self.db,market,direction,now,books[market['tokens'][direction]])
+                if not supported:return reason
+                entry_market=dict(market,scalp_policy=btc_scalp.policy(),entry_rh_price=rh['price'],entry_diagnostics=details)
             with self.db:
                 result=self.db.execute('INSERT OR IGNORE INTO trades(condition,opened,market,direction,shares,cost,strategy) VALUES (?,?,?,?,?,?,?)',
-                                       (market['condition'],now,json.dumps(market),direction,quantity,cost,self.strategy))
+                                       (market['condition'],now,json.dumps(entry_market),direction,quantity,cost,self.strategy))
             return 'PAPER BUY' if result.rowcount else 'already traded this interval'
         if halted or not fresh:
             return 'risk pause' if halted else 'waiting for fresh Robinhood quote'
-        if not market['start']+12 <= now <= market['end']-(45 if self.strategy=='trend' else 30):
+        if not market['start']+12 <= now <= market['end']-(45 if self.strategy in ('trend','scalp') else 30):
             return 'outside entry window'
-        if self.strategy=='trend':
+        if self.strategy in ('trend','scalp'):
             if any(t['closed'] is None for t in self.positions()):
                 return 'holding position; watching profit target and risk exits'
             direction=self.last_signal.get('direction')
             if direction is None:
                 return self.last_signal['reason']
-            ready,reason=btc_trend.reentry(self.db,market,direction,now)
+            ready,reason=(btc_scalp.reentry if self.strategy=='scalp' else btc_trend.reentry)(self.db,market,direction,now)
             if not ready:
                 return reason
             ask=asks[direction]
             bid=max(number(r['price']) for r in books[market['tokens'][direction]]['bids'])
             if not (.10<=ask<=.80 and ask-bid<=.03+1e-9):
                 return 'trend entry spread or price rejected'
+            if self.strategy=='scalp':
+                supported,reason,details=btc_scalp.entry_guard(self.db,market,direction,now,books[market['tokens'][direction]])
+                self.last_signal.update(details)
+                if not supported:return reason
             with self.db:
                 self.db.execute('INSERT OR REPLACE INTO pending VALUES (1,?,?,?,?)',(now,json.dumps(market),direction,ask))
             return 'trend signal queued; no fill yet'
@@ -403,22 +429,22 @@ def report(engine, folder, health, books=None):
     for t in state['trades']:
         t['entry_price_including_costs'] = t['cost']/t['shares']
         t['net_return_percent'] = None if t['proceeds'] is None else 100*(t['proceeds']/t['cost']-1)
-        t['target_proceeds'] = t['cost']*1.05 if t['strategy']=='trend' else None
+        t['target_proceeds'] = t['cost']*1.05 if t['strategy'] in ('trend','scalp') else None
         t['exit_price_after_costs'] = None if t['proceeds'] is None else t['proceeds']/t['shares']
     if time.monotonic()-getattr(engine,'diagnostics_at',-100) >= 30:
         engine.cached_diagnostics=signal_diagnostics(engine)
         engine.diagnostics_at=time.monotonic()
     state['signal_diagnostics']=engine.cached_diagnostics
     state['strategy']=engine.strategy
-    state['strategy_version']=btc_trend.VERSION if engine.strategy=='trend' else 'btc-lead-v1'
+    state['strategy_version']=btc_scalp.VERSION if engine.strategy=='scalp' else btc_trend.VERSION if engine.strategy=='trend' else 'btc-lead-v1'
     state['trend_signal']=engine.last_signal
-    if engine.strategy=='trend':
-        state['strategy_rules']=dict(net_profit_target=.05,position_loss_trigger=.20,max_hold_seconds=120,
-                                     reentry_cooldown_seconds=20,max_entries_per_interval=4,daily_loss_pause=4*paper_config.scale(engine.paper),
-                                     position_cap=3*paper_config.scale(engine.paper,state['realized_pnl']),
-                                     daily_purchase_cap=12*paper_config.scale(engine.paper,state['realized_pnl']))
+    if engine.strategy in ('trend','scalp'):
+        state['strategy_rules']=dict(net_profit_target=.05,position_loss_trigger=.10 if engine.strategy=='scalp' else .20,max_hold_seconds=60 if engine.strategy=='scalp' else 120,
+                                     reentry_cooldown_seconds=20,max_entries_per_interval=2 if engine.strategy=='scalp' else 4,daily_loss_pause=4*paper_config.scale(engine.paper),
+                                     position_cap=(btc_scalp.POSITION_BASE if engine.strategy=='scalp' else 3)*paper_config.scale(engine.paper,state['realized_pnl']),
+                                     daily_purchase_cap=(btc_scalp.DAILY_TURNOVER_BASE if engine.strategy=='scalp' else 12)*paper_config.scale(engine.paper,state['realized_pnl']))
     state.update(health,updated_utc=datetime.now(timezone.utc).isoformat(),mode='PAPER ONLY',
-                 hypothesis='Experimental trend following; five-percent target is not guaranteed' if engine.strategy=='trend' else 'Unverified Robinhood lead; no assumed ten-second advantage',
+                 hypothesis='Experimental trend following; five-percent target is not guaranteed' if engine.strategy in ('trend','scalp') else 'Unverified Robinhood lead; no assumed ten-second advantage',
                  samples=engine.db.execute('SELECT COUNT(*) FROM samples').fetchone()[0])
     atomic(folder/'status.json',json.dumps(without_quantities(state),indent=2)+'\n')
     output=io.StringIO();writer=csv.writer(output)
@@ -510,6 +536,22 @@ def fake_books(now,up=.40,down=.60):
             for token,price in [('up',up),('down',down)]}
 
 
+def simulate_scalp(initial_cash=100,goal=None,compound=False):
+    scenarios=[]
+    for name in ['net_profit_target','adverse_move','flat_no_trend']:
+        e=Engine(':memory:',strategy='scalp',initial_cash=initial_cash,goal=goal,compound=compound)
+        m=fake_market();decisions=[]
+        for now in range(70):
+            up=.79 if name=='net_profit_target' and now>=50 else .66 if name=='adverse_move' and now>=50 else .70
+            b=fake_books(now,up=up,down=1-up)
+            for book in b.values():book['bids'][0]['size']='300'
+            price=100000 if name=='flat_no_trend' else 100000+now
+            decisions.append(e.tick(now,m,dict(price=price,timestamp=now,received=now),b))
+        scenarios.append(dict(name=name,**e.state(b),decisions=decisions))
+    return dict(label='SYNTHETIC ONLY: invented quotes, not returns or proof of profit. Each scenario starts at $%.2f.'%initial_cash,
+                strategy=btc_scalp.VERSION,scenarios=scenarios)
+
+
 def simulate_trend(initial_cash=40,goal=None,compound=False):
     scenarios=[]
     for name in ['profit_and_pullback_reentry','adverse_move','flat_no_trend']:
@@ -532,7 +574,9 @@ def simulate_trend(initial_cash=40,goal=None,compound=False):
                 strategy=btc_trend.VERSION,scenarios=scenarios)
 
 
-def simulate(strategy='trend',initial_cash=40,goal=None,compound=False):
+def simulate(strategy='scalp',initial_cash=40,goal=None,compound=False):
+    if strategy=='scalp':
+        return simulate_scalp(initial_cash,goal,compound)
     if strategy=='trend':
         return simulate_trend(initial_cash,goal,compound)
     scenarios=[]
@@ -555,7 +599,7 @@ def main():
     p.add_argument('--initial-cash',type=float)
     p.add_argument('--goal',type=float)
     p.add_argument('--compound',action='store_true',default=None)
-    p.add_argument('--strategy',choices=['trend','lead'],default='trend')
+    p.add_argument('--strategy',choices=['scalp','trend','lead'],default='scalp')
     p.add_argument('--report-dir',default='reports/btc15')
     p.add_argument('--config',default=CONFIG)
     p.add_argument('--poll',type=float,default=1)
@@ -584,7 +628,11 @@ def main():
         with os.fdopen(descriptor,'w') as handle: json.dump(data,handle)
         print('Saved locally. Background collector reloads configuration each cycle.')
     elif a.simulate:
-        print(json.dumps(without_quantities(simulate(a.strategy,a.initial_cash or 40,a.goal,bool(a.compound))),indent=2))
+        config=dict(paper_config.DEFAULT)
+        if Path(a.database).exists():
+            connection=sqlite3.connect('file:'+str(Path(a.database).resolve())+'?mode=ro',uri=True)
+            config=paper_config.settings(connection);connection.close()
+        print(json.dumps(without_quantities(simulate(a.strategy,a.initial_cash or config['initial_cash'],a.goal or config['goal'],config['compound'] if a.compound is None else a.compound)),indent=2))
     else:
         if not math.isfinite(a.poll) or a.poll < 1: p.error('poll must be at least one second')
         live(a)

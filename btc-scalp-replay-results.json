@@ -1,0 +1,542 @@
+{
+  "label": "Recorded quote replay, not executable returns or proof of profit.",
+  "frozen_end_id": 9223,
+  "observations": 9223,
+  "intervals": 33,
+  "start_timestamp": 1792448346.234436,
+  "end_timestamp": 1792483662.6644878,
+  "policy": "Fixed v2 rules compared with v1. No parameter grid search. Last third of intervals used for temporal validation; inspected during development, not an independent future trial.",
+  "limitations": "HTTP samples have gaps; no quote interpolation, atomic fills, queue priority or real order rejection model. Unknown final equity stays unknown. Drawdown is measured only at priced observations. Each partition starts with fresh $100.",
+  "partitions": {
+    "development": {
+      "intervals": 22,
+      "observations": 7317,
+      "v1": {
+        "goal": 1000,
+        "remaining_to_goal": 905.77949,
+        "goal_progress_percent": -0.6421655555555567,
+        "goal_reached": false,
+        "compound": true,
+        "initial_cash": 100,
+        "cash": 94.22050999999999,
+        "lifetime_spend": 40.77769,
+        "realized_pnl": -5.779490000000003,
+        "equity": 94.22050999999999,
+        "total_pnl": -5.77949000000001,
+        "entries": 6,
+        "closed": 6,
+        "unclosed": 0,
+        "winning_exits": 2,
+        "max_observed_drawdown": 7.414069999999995,
+        "unknown_equity_observations": 0,
+        "invalid_book_observations": 0,
+        "decisions": {
+          "collecting 45 seconds of trend history": 1879,
+          "no confirmed trend": 3789,
+          "trend signal queued; no fill yet": 322,
+          "budget, open exposure or entry cost guard": 213,
+          "awaiting one-second execution delay": 113,
+          "pending signal expired or rejected": 103,
+          "trend entry spread or price rejected": 223,
+          "PAPER BUY": 6,
+          "holding position; watching profit target and risk exits": 128,
+          "twenty-second exit cooldown": 11,
+          "waiting for post-exit pullback": 12,
+          "four-entry interval cap": 8,
+          "outside entry window": 129,
+          "trend history has a data gap": 377,
+          "waiting for fresh Robinhood quote": 4
+        },
+        "trades": [
+          {
+            "id": 1,
+            "condition": "0x8b7051c4895ef9796768374785ea33c68106aa8b46c77d80116fcc6ba2d7155c",
+            "opened": 1792448618.340292,
+            "market": {
+              "condition": "0x8b7051c4895ef9796768374785ea33c68106aa8b46c77d80116fcc6ba2d7155c",
+              "title": "Bitcoin Up or Down - October 19, 6:15PM-6:30PM ET",
+              "start": 1792448100,
+              "end": 1792449000,
+              "tokens": [
+                "44398173338147060527806178554641627966329769619946650684725177521387142198380",
+                "37248565072853909172454420726599522084127503369503507179694690247570291938835"
+              ],
+              "fee_rate": 0.07,
+              "minimum": 5,
+              "resolution_source": "https://data.chain.link/streams/btc-usd-twap-60s-streams"
+            },
+            "direction": 1,
+            "cost": 7.1706,
+            "closed": 1792448642.429229,
+            "proceeds": 7.837849999999999,
+            "exit_reason": "five-percent net profit target",
+            "strategy": "trend"
+          },
+          {
+            "id": 2,
+            "condition": "0x8b7051c4895ef9796768374785ea33c68106aa8b46c77d80116fcc6ba2d7155c",
+            "opened": 1792448738.815422,
+            "market": {
+              "condition": "0x8b7051c4895ef9796768374785ea33c68106aa8b46c77d80116fcc6ba2d7155c",
+              "title": "Bitcoin Up or Down - October 19, 6:15PM-6:30PM ET",
+              "start": 1792448100,
+              "end": 1792449000,
+              "tokens": [
+                "44398173338147060527806178554641627966329769619946650684725177521387142198380",
+                "37248565072853909172454420726599522084127503369503507179694690247570291938835"
+              ],
+              "fee_rate": 0.07,
+              "minimum": 5,
+              "resolution_source": "https://data.chain.link/streams/btc-usd-twap-60s-streams"
+            },
+            "direction": 0,
+            "cost": 6.7391700000000005,
+            "closed": 1792448748.873155,
+            "proceeds": 5.38657,
+            "exit_reason": "position loss exit",
+            "strategy": "trend"
+          },
+          {
+            "id": 3,
+            "condition": "0x8b7051c4895ef9796768374785ea33c68106aa8b46c77d80116fcc6ba2d7155c",
+            "opened": 1792448803.064312,
+            "market": {
+              "condition": "0x8b7051c4895ef9796768374785ea33c68106aa8b46c77d80116fcc6ba2d7155c",
+              "title": "Bitcoin Up or Down - October 19, 6:15PM-6:30PM ET",
+              "start": 1792448100,
+              "end": 1792449000,
+              "tokens": [
+                "44398173338147060527806178554641627966329769619946650684725177521387142198380",
+                "37248565072853909172454420726599522084127503369503507179694690247570291938835"
+              ],
+              "fee_rate": 0.07,
+              "minimum": 5,
+              "resolution_source": "https://data.chain.link/streams/btc-usd-twap-60s-streams"
+            },
+            "direction": 1,
+            "cost": 6.93372,
+            "closed": 1792448810.117586,
+            "proceeds": 5.230239999999999,
+            "exit_reason": "position loss exit",
+            "strategy": "trend"
+          },
+          {
+            "id": 4,
+            "condition": "0x8b7051c4895ef9796768374785ea33c68106aa8b46c77d80116fcc6ba2d7155c",
+            "opened": 1792448913.817211,
+            "market": {
+              "condition": "0x8b7051c4895ef9796768374785ea33c68106aa8b46c77d80116fcc6ba2d7155c",
+              "title": "Bitcoin Up or Down - October 19, 6:15PM-6:30PM ET",
+              "start": 1792448100,
+              "end": 1792449000,
+              "tokens": [
+                "44398173338147060527806178554641627966329769619946650684725177521387142198380",
+                "37248565072853909172454420726599522084127503369503507179694690247570291938835"
+              ],
+              "fee_rate": 0.07,
+              "minimum": 5,
+              "resolution_source": "https://data.chain.link/streams/btc-usd-twap-60s-streams"
+            },
+            "direction": 1,
+            "cost": 7.00954,
+            "closed": 1792448915.8117068,
+            "proceeds": 4.830640000000001,
+            "exit_reason": "position loss exit",
+            "strategy": "trend"
+          },
+          {
+            "id": 5,
+            "condition": "0x8c3ebbda91878e1770e308047ea1969969de84707114a91fdeb02319b9c5c702",
+            "opened": 1792454466.1369169,
+            "market": {
+              "condition": "0x8c3ebbda91878e1770e308047ea1969969de84707114a91fdeb02319b9c5c702",
+              "title": "Bitcoin Up or Down - October 19, 8:00PM-8:15PM ET",
+              "start": 1792454400,
+              "end": 1792455300,
+              "tokens": [
+                "10829769022099474019997551250741899828491132986078837014828744787430069872392",
+                "14160787719611231776815528896883766486712195926811037511928386534681813220228"
+              ],
+              "fee_rate": 0.07,
+              "minimum": 5,
+              "resolution_source": "https://data.chain.link/streams/btc-usd-twap-60s-streams"
+            },
+            "direction": 1,
+            "cost": 6.62257,
+            "closed": 1792454497.352284,
+            "proceeds": 5.03281,
+            "exit_reason": "position loss exit",
+            "strategy": "trend"
+          },
+          {
+            "id": 6,
+            "condition": "0xfbf3cc0fb02a50bfa548d02050fe925e7b64cf49655f644931e3049a223572f6",
+            "opened": 1792459950.501983,
+            "market": {
+              "condition": "0xfbf3cc0fb02a50bfa548d02050fe925e7b64cf49655f644931e3049a223572f6",
+              "title": "Bitcoin Up or Down - October 19, 9:30PM-9:45PM ET",
+              "start": 1792459800,
+              "end": 1792460700,
+              "tokens": [
+                "93161432819446057820437669808573259436381405193690237851640496224686316693286",
+                "80289168735845583748229293782239981008899108874330810995929999291564348354523"
+              ],
+              "fee_rate": 0.07,
+              "minimum": 5,
+              "resolution_source": "https://data.chain.link/streams/btc-usd-twap-60s-streams"
+            },
+            "direction": 0,
+            "cost": 6.30209,
+            "closed": 1792460058.888614,
+            "proceeds": 6.68009,
+            "exit_reason": "five-percent net profit target",
+            "strategy": "trend"
+          }
+        ]
+      },
+      "v2": {
+        "goal": 1000,
+        "remaining_to_goal": 900.69431,
+        "goal_progress_percent": -0.07714555555555573,
+        "goal_reached": false,
+        "compound": true,
+        "initial_cash": 100,
+        "cash": 99.30569,
+        "lifetime_spend": 12.38426,
+        "realized_pnl": -0.6943100000000002,
+        "equity": 99.30569,
+        "total_pnl": -0.6943100000000015,
+        "entries": 3,
+        "closed": 3,
+        "unclosed": 0,
+        "winning_exits": 1,
+        "max_observed_drawdown": 1.2520799999999923,
+        "unknown_equity_observations": 0,
+        "invalid_book_observations": 0,
+        "decisions": {
+          "collecting 45 seconds of trend history": 1893,
+          "no confirmed trend": 3886,
+          "scalp: insufficient visible bid support": 337,
+          "trend signal queued; no fill yet": 77,
+          "awaiting one-second execution delay": 28,
+          "budget, open exposure or entry cost guard": 41,
+          "scalp: outcome bid is falling": 40,
+          "scalp: avoid chasing a price jump": 132,
+          "trend entry spread or price rejected": 167,
+          "pending signal expired or rejected": 29,
+          "outside entry window": 129,
+          "PAPER BUY": 3,
+          "holding position; watching profit target and risk exits": 41,
+          "scalp: two-minute cooldown after loss": 68,
+          "twenty-second exit cooldown": 11,
+          "waiting for post-exit pullback": 52,
+          "trend history has a data gap": 377,
+          "waiting for fresh Robinhood quote": 6
+        },
+        "trades": [
+          {
+            "id": 1,
+            "condition": "0xdf2ea2d3485bc82bd93ee63cacb94a76e065e5b0d82b7f2cdcae6bf33a10e383",
+            "opened": 1792449309.6064,
+            "market": {
+              "condition": "0xdf2ea2d3485bc82bd93ee63cacb94a76e065e5b0d82b7f2cdcae6bf33a10e383",
+              "title": "Bitcoin Up or Down - October 19, 6:30PM-6:45PM ET",
+              "start": 1792449000,
+              "end": 1792449900,
+              "tokens": [
+                "111908990109171980008883760264857888425398125887562216753498279921348330517363",
+                "108365833166488147254322671551175839080459421208501685432525436954769961080922"
+              ],
+              "fee_rate": 0.07,
+              "minimum": 5,
+              "resolution_source": "https://data.chain.link/streams/btc-usd-twap-60s-streams",
+              "scalp_policy": {
+                "version": "btc-scalp-v2",
+                "max_entry_drag": 0.07,
+                "stop_loss": 0.1,
+                "take_profit": 0.05,
+                "max_hold": 60,
+                "position_fraction": 0.05,
+                "daily_turnover_fraction": 1.0
+              },
+              "entry_rh_price": 81986.265279785,
+              "entry_diagnostics": {
+                "near_touch_imbalance": 0.7193180796258946,
+                "best_bid": 0.77,
+                "best_ask": 0.78,
+                "five_second_bid_change": 0.0
+              }
+            },
+            "direction": 1,
+            "cost": 3.9850600000000003,
+            "closed": 1792449323.760902,
+            "proceeds": 3.55601,
+            "exit_reason": "position loss exit",
+            "strategy": "scalp"
+          },
+          {
+            "id": 2,
+            "condition": "0x1e008bc7658aae831c5755651885935bf5324d81dc165ca46008f4efdbc4d07a",
+            "opened": 1792451055.44869,
+            "market": {
+              "condition": "0x1e008bc7658aae831c5755651885935bf5324d81dc165ca46008f4efdbc4d07a",
+              "title": "Bitcoin Up or Down - October 19, 7:00PM-7:15PM ET",
+              "start": 1792450800,
+              "end": 1792451700,
+              "tokens": [
+                "71569464454844261609103535482319074282566506810133725777652966047632952122195",
+                "65969573193089458650665078385740625743637243481600021639475750406006159735157"
+              ],
+              "fee_rate": 0.07,
+              "minimum": 5,
+              "resolution_source": "https://data.chain.link/streams/btc-usd-twap-60s-streams",
+              "scalp_policy": {
+                "version": "btc-scalp-v2",
+                "max_entry_drag": 0.07,
+                "stop_loss": 0.1,
+                "take_profit": 0.05,
+                "max_hold": 60,
+                "position_fraction": 0.05,
+                "daily_turnover_fraction": 1.0
+              },
+              "entry_rh_price": 82018.849797325,
+              "entry_diagnostics": {
+                "near_touch_imbalance": 0.6391214078565779,
+                "best_bid": 0.79,
+                "best_ask": 0.8,
+                "five_second_bid_change": 0.010000000000000009
+              }
+            },
+            "direction": 0,
+            "cost": 4.081,
+            "closed": 1792451078.6530108,
+            "proceeds": 3.55601,
+            "exit_reason": "position loss exit",
+            "strategy": "scalp"
+          },
+          {
+            "id": 3,
+            "condition": "0xdffd9f79bfa63b70bc098b7aba18b1fa6e5fbcb92c1ac7d303e1cbd4e790aa18",
+            "opened": 1792453689.313945,
+            "market": {
+              "condition": "0xdffd9f79bfa63b70bc098b7aba18b1fa6e5fbcb92c1ac7d303e1cbd4e790aa18",
+              "title": "Bitcoin Up or Down - October 19, 7:45PM-8:00PM ET",
+              "start": 1792453500,
+              "end": 1792454400,
+              "tokens": [
+                "49804801517818212971964632500193856384784933725093275591919378189424979732593",
+                "30944727734750021480620125774420887394773136460662199323792289042564378863335"
+              ],
+              "fee_rate": 0.07,
+              "minimum": 5,
+              "resolution_source": "https://data.chain.link/streams/btc-usd-twap-60s-streams",
+              "scalp_policy": {
+                "version": "btc-scalp-v2",
+                "max_entry_drag": 0.07,
+                "stop_loss": 0.1,
+                "take_profit": 0.05,
+                "max_hold": 60,
+                "position_fraction": 0.05,
+                "daily_turnover_fraction": 1.0
+              },
+              "entry_rh_price": 81955.320526575,
+              "entry_diagnostics": {
+                "near_touch_imbalance": 0.7345492689401237,
+                "best_bid": 0.69,
+                "best_ask": 0.7,
+                "five_second_bid_change": 0.0
+              }
+            },
+            "direction": 1,
+            "cost": 4.318199999999999,
+            "closed": 1792453696.465533,
+            "proceeds": 4.577929999999999,
+            "exit_reason": "five-percent net profit target",
+            "strategy": "scalp"
+          }
+        ]
+      }
+    },
+    "held_out": {
+      "intervals": 11,
+      "observations": 1906,
+      "v1": {
+        "goal": 1000,
+        "remaining_to_goal": 904.70247,
+        "goal_progress_percent": -0.5224966666666673,
+        "goal_reached": false,
+        "compound": true,
+        "initial_cash": 100,
+        "cash": 95.29753,
+        "lifetime_spend": 27.90508,
+        "realized_pnl": -4.702469999999999,
+        "equity": 95.29753,
+        "total_pnl": -4.702470000000005,
+        "entries": 4,
+        "closed": 4,
+        "unclosed": 0,
+        "winning_exits": 1,
+        "max_observed_drawdown": 5.122470000000007,
+        "unknown_equity_observations": 0,
+        "invalid_book_observations": 0,
+        "decisions": {
+          "collecting 45 seconds of trend history": 1264,
+          "no confirmed trend": 287,
+          "outside entry window": 83,
+          "trend entry spread or price rejected": 42,
+          "trend history has a data gap": 147,
+          "trend signal queued; no fill yet": 21,
+          "PAPER BUY": 4,
+          "holding position; watching profit target and risk exits": 27,
+          "twenty-second exit cooldown": 8,
+          "waiting for fresh Robinhood quote": 2,
+          "pending signal expired or rejected": 9,
+          "awaiting one-second execution delay": 4,
+          "budget, open exposure or entry cost guard": 8
+        },
+        "trades": [
+          {
+            "id": 1,
+            "condition": "0xabd1bceb1f2df717586db1d661a8dc70ba1ab42b2677401cd80015af4e619d93",
+            "opened": 1792470783.944355,
+            "market": {
+              "condition": "0xabd1bceb1f2df717586db1d661a8dc70ba1ab42b2677401cd80015af4e619d93",
+              "title": "Bitcoin Up or Down - October 20, 12:30AM-12:45AM ET",
+              "start": 1792470600,
+              "end": 1792471500,
+              "tokens": [
+                "54329804287122640909223554816255388790061501692805600896896753084744399411378",
+                "44413260675850200623063287734070860796253760199883708424647217664709951425392"
+              ],
+              "fee_rate": 0.07,
+              "minimum": 5,
+              "resolution_source": "https://data.chain.link/streams/btc-usd-twap-60s-streams"
+            },
+            "direction": 0,
+            "cost": 7.00232,
+            "closed": 1792470800.860291,
+            "proceeds": 7.42232,
+            "exit_reason": "five-percent net profit target",
+            "strategy": "trend"
+          },
+          {
+            "id": 2,
+            "condition": "0xabd1bceb1f2df717586db1d661a8dc70ba1ab42b2677401cd80015af4e619d93",
+            "opened": 1792470849.6773582,
+            "market": {
+              "condition": "0xabd1bceb1f2df717586db1d661a8dc70ba1ab42b2677401cd80015af4e619d93",
+              "title": "Bitcoin Up or Down - October 20, 12:30AM-12:45AM ET",
+              "start": 1792470600,
+              "end": 1792471500,
+              "tokens": [
+                "54329804287122640909223554816255388790061501692805600896896753084744399411378",
+                "44413260675850200623063287734070860796253760199883708424647217664709951425392"
+              ],
+              "fee_rate": 0.07,
+              "minimum": 5,
+              "resolution_source": "https://data.chain.link/streams/btc-usd-twap-60s-streams"
+            },
+            "direction": 1,
+            "cost": 7.0475699999999994,
+            "closed": 1792470853.7097962,
+            "proceeds": 5.568960000000001,
+            "exit_reason": "position loss exit",
+            "strategy": "trend"
+          },
+          {
+            "id": 3,
+            "condition": "0x03b1a908641a79ebc694881b7e516a65e9cbd6110604be2a99f8f1c813048780",
+            "opened": 1792471628.7356002,
+            "market": {
+              "condition": "0x03b1a908641a79ebc694881b7e516a65e9cbd6110604be2a99f8f1c813048780",
+              "title": "Bitcoin Up or Down - October 20, 12:45AM-1:00AM ET",
+              "start": 1792471500,
+              "end": 1792472400,
+              "tokens": [
+                "28794709138799141098963942221801472184271169171711989482091243877413027675241",
+                "104259077631297973267744941298346516351113525263766680358197116565242588673695"
+              ],
+              "fee_rate": 0.07,
+              "minimum": 5,
+              "resolution_source": "https://data.chain.link/streams/btc-usd-twap-60s-streams"
+            },
+            "direction": 1,
+            "cost": 7.07283,
+            "closed": 1792471637.7896478,
+            "proceeds": 5.42195,
+            "exit_reason": "position loss exit",
+            "strategy": "trend"
+          },
+          {
+            "id": 4,
+            "condition": "0x03b1a908641a79ebc694881b7e516a65e9cbd6110604be2a99f8f1c813048780",
+            "opened": 1792471671.0322702,
+            "market": {
+              "condition": "0x03b1a908641a79ebc694881b7e516a65e9cbd6110604be2a99f8f1c813048780",
+              "title": "Bitcoin Up or Down - October 20, 12:45AM-1:00AM ET",
+              "start": 1792471500,
+              "end": 1792472400,
+              "tokens": [
+                "28794709138799141098963942221801472184271169171711989482091243877413027675241",
+                "104259077631297973267744941298346516351113525263766680358197116565242588673695"
+              ],
+              "fee_rate": 0.07,
+              "minimum": 5,
+              "resolution_source": "https://data.chain.link/streams/btc-usd-twap-60s-streams"
+            },
+            "direction": 1,
+            "cost": 6.782360000000001,
+            "closed": 1792471688.17066,
+            "proceeds": 4.78938,
+            "exit_reason": "position loss exit",
+            "strategy": "trend"
+          }
+        ]
+      },
+      "v2": {
+        "goal": 1000,
+        "remaining_to_goal": 900.0,
+        "goal_progress_percent": 0.0,
+        "goal_reached": false,
+        "compound": true,
+        "initial_cash": 100,
+        "cash": 100,
+        "lifetime_spend": 0,
+        "realized_pnl": 0,
+        "equity": 100.0,
+        "total_pnl": 0.0,
+        "entries": 0,
+        "closed": 0,
+        "unclosed": 0,
+        "winning_exits": 0,
+        "max_observed_drawdown": 0.0,
+        "unknown_equity_observations": 0,
+        "invalid_book_observations": 0,
+        "decisions": {
+          "collecting 45 seconds of trend history": 1265,
+          "no confirmed trend": 301,
+          "outside entry window": 83,
+          "trend entry spread or price rejected": 42,
+          "trend history has a data gap": 148,
+          "scalp: insufficient visible bid support": 23,
+          "trend signal queued; no fill yet": 11,
+          "budget, open exposure or entry cost guard": 5,
+          "scalp: avoid chasing a price jump": 16,
+          "waiting for fresh Robinhood quote": 2,
+          "awaiting one-second execution delay": 3,
+          "pending signal expired or rejected": 5,
+          "scalp: outcome bid is falling": 1,
+          "scalp: collecting book confirmation": 1
+        },
+        "trades": []
+      }
+    }
+  },
+  "baseline_reproduction": {
+    "entries": 8,
+    "realized_pnl": -6.799210000000002,
+    "actual_closed_trades": 8,
+    "actual_realized_pnl": -6.799210000000002,
+    "matches": true
+  }
+}

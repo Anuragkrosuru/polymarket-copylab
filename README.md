@@ -208,7 +208,7 @@ stress case. These are accounting examples, not historical or live returns.
 Official references: [positions and tokens](https://docs.polymarket.com/concepts/positions-tokens)
 and [market fees](https://docs.polymarket.com/trading/fees).
 
-### Robinhood BTC trend paper bot
+### Robinhood BTC scalping paper bot
 
 A third, separate **$40 paper account** follows short-term Robinhood BTC trends
 and trades Polymarket's 15-minute Up/Down markets. See [setup, strategy and limitations](docs/btc15-experiment.md).
@@ -260,7 +260,7 @@ filter, and spread/price/time window. These overlapping observations are **not**
 independent trades or measured returns. They exclude delayed execution, minimum
 size and budget checks. These describe the optional legacy lead strategy. The default BTC strategy now uses trend confirmation and a five-percent net profit target.
 
-The default BTC trend strategy confirms 30-second momentum of at least one basis
+The optional v1 BTC trend strategy confirms 30-second momentum of at least one basis
 point with fast/slow averages, ten-second continuation and tick direction. It
 requests a sale at **5% net position profit after modeled costs**, or exits on a
 20% position loss, confirmed reversal, two-minute holding limit or approaching
@@ -317,8 +317,8 @@ excluding unrealized winning estimates. At $100 initial capital:
   limits begin at $5/$2.50. Minimum venue sizes can still prevent small entries.
 - Arbitrage: up to $15 per pair and $30 daily purchases. Fee/depth/edge checks
   remain; buying both outcomes does not make sequential execution risk-free.
-- BTC trend: up to $7.50 per position and $30 daily purchases, a $10 daily loss
-  pause, 5% net profit target and 20% position loss trigger. Re-entry and freshness
+- BTC scalp v2: up to $5 per position and $100 daily purchase turnover initially,
+  a $10 daily loss pause, 5% net profit target and 10% position loss trigger. Re-entry and freshness
   checks remain. Prices can jump beyond exit triggers.
 
 The fixed daily BTC loss pause scales with starting capital. Purchase caps may
@@ -330,3 +330,20 @@ for all three engines to `goal-simulation-results.json`. They test accounting an
 include losses and rejected trades; they are not backtests, independent return
 estimates or trajectories manufactured to hit $1,000. Live results appear only
 in the active ledgers and `reports/`.
+
+### BTC scalping revision and recorded validation
+
+The BTC CLI now defaults to `--strategy scalp` (`btc-scalp-v2`). It requires at
+most 7% modeled round-trip entry drag and visible bid support, targets 5% net
+profit, triggers exit at 10% position loss or one minute, and protects gains after
+a 3% open profit. Maximum exposure is 5% of starting cash plus realized PnL; the
+turnover cap is 100% per UTC day using available cash, with no borrowing. Loss
+cooldowns, a three-loss pause, and a two-entry interval limit reduce repeated
+churn. Existing v1 trades retain their policy and all losses stay recorded.
+
+See [research, limitations and replay findings](docs/btc-scalping-research-2026-10-20.md).
+Recorded replay reproduces the old run's eight trades and $6.79921 loss. The new
+version lost less on the development segment and made no entries in the later
+validation segment. That is reduced exposure, **not proof of a profitable edge**.
+`btc-scalp-replay-results.json` is separate from live performance. Future paper
+results must establish whether valid opportunities actually pay after costs.

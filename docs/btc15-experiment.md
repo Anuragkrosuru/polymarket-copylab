@@ -1,13 +1,13 @@
-# Robinhood BTC trend paper experiment
+# Robinhood BTC paper experiment
 
 The active experiment starts with a separate $100 simulated account and tracks a $1,000 goal. It trades Polymarket's 15-minute BTC
 Up/Down markets. It follows short-term trends and seeks a five-percent net return
 on a position. It does not assume a ten-second Robinhood advantage or predict the
 final winning outcome. No Robinhood or Polymarket orders are submitted.
 
-## Current strategy
+## Prior trend strategy retained for comparison
 
-The default CLI strategy is `trend`. It records Robinhood midpoint and both
+The prior v1 CLI strategy is `trend`; the current default is `scalp` as described below. It records Robinhood midpoint and both
 outcome books, targeting one-second polls. A candidate requires at least 30 fresh
 observations spanning 45 seconds, with no observation gap longer than five seconds.
 It confirms the same direction through all of these checks:
@@ -98,7 +98,7 @@ and cannot submit orders. It reloads configuration each cycle. The bundled Pytho
 includes the signing dependency; other installations can use
 `python3 -m pip install '.[robinhood]'`.
 
-`python3 -m copylab.btc15` runs the default trend collector. `--once` performs one
+`python3 -m copylab.btc15` runs the default cost-aware scalp collector. `--once` performs one
 cycle, `--simulate` runs invented trend, profit-target, re-entry and loss examples
 through the same engine in fresh accounts. Pass `--initial-cash 100 --goal 1000
 --compound --simulate` for $100 scenarios, or run `python3 -m copylab.goal_simulation`
@@ -137,3 +137,23 @@ and checked rather than assumed permanent.
 [Polymarket fees](https://docs.polymarket.com/trading/fees) documents the taker
 formula and precision. The trend thresholds and execution buffer above are our
 paper-model choices, not recommendations from those sources.
+
+## Current scalp v2 policy
+
+See [the research and replay record](btc-scalping-research-2026-10-20.md) for
+precise rules and limitations. V2 retains basic trend confirmation but limits
+entry round-trip drag to 7%, requires visible bid support and non-falling outcome
+bids, and reduces exposure to 5% of starting cash plus realized PnL. The 5% net
+profit target remains; the loss trigger becomes 10%, maximum hold one minute,
+with protection after an open 3% gain and a one-basis-point adverse BTC move exit.
+
+There are at most two entries per interval, two minutes after a losing exit and
+a fifteen-minute pause after three v2 losses. Daily purchase turnover may equal
+starting cash plus realized PnL (initially $100); available cash and the $10 daily
+loss pause still apply. No cash or past loss is reset. Daily spending from older
+trades still counts. These are triggers, not guaranteed prices or loss ceilings.
+
+V2's temporal replay entered no trades in the later segment, so it has not
+established positive expectancy. `--strategy trend` and `--strategy lead` retain
+the older experiments for explicit comparisons. `--simulate` uses the active
+account's starting balance by default and labels invented scenarios separately.

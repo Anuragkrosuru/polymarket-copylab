@@ -78,12 +78,12 @@ def btc(root, directory, now):
                 value=equity-cash if equity is not None and len(opened)==1 else None
                 positions.append(dict(title=title,outcome=outcome,price=price,cost=t['cost'],value=value,
                                       pnl=None if value is None else value-t['cost'],
-                                      target_proceeds=t['cost']*1.05 if t.get('strategy')=='trend' else None))
+                                      target_proceeds=t['cost']*1.05 if t.get('strategy') in ('trend','scalp') else None))
         return dict(**paper_config.progress(config,equity),name=name,available=True,initial_cash=initial,cash=cash,equity=equity,
                     total_pnl=None if equity is None else equity-initial,realized_pnl=realized,
                     unrealized_pnl=None if equity is None else equity-cash-sum(t['cost'] for t in opened),
                     positions=positions,entries=len(trades),exits=len(trades)-len(opened),
-                    status=snapshot.get('decision','No status available'),source_updated=checked,stale=not fresh),events
+                    status=snapshot.get('strategy_version',snapshot.get('strategy','BTC'))+'; '+snapshot.get('decision','No status available'),source_updated=checked,stale=not fresh),events
     except (OSError,sqlite3.Error,ValueError,KeyError,TypeError) as error:
         return unavailable(name,type(error).__name__)
 

@@ -6,7 +6,7 @@ from pathlib import Path
 from copylab.__main__ import Ledger,scan
 from copylab.portfolio import summary
 from copylab.arbitrage import Account,quote
-from copylab.btc15 import simulate_trend
+from copylab.btc15 import simulate_scalp
 from copylab.presentation import without_quantities
 
 
@@ -48,7 +48,7 @@ def run(output='goal-simulation-results.json'):
     result=dict(label='SYNTHETIC ONLY. Invented inputs, not historical/live returns or a forecast. No scenario assumes the $1,000 target is reached.',
                 initial_cash_per_bot=100,goal_per_bot=1000,compound=True,
                 copy=dict(favorable=copy_case(.65),adverse=copy_case(.30)),
-                arbitrage=arbitrage_case(),btc=simulate_trend(initial_cash=100,goal=1000,compound=True))
+                arbitrage=arbitrage_case(),btc=simulate_scalp(initial_cash=100,goal=1000,compound=True))
     Path(output).write_text(json.dumps(without_quantities(result),indent=2)+'\n')
     print('Saved invented $100 scenarios:',output)
     return result
